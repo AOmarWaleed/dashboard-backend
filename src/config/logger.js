@@ -1,4 +1,5 @@
 import { createLogger } from "@givc/shared-backend";
+import { config } from "./env.js";
 
 
 

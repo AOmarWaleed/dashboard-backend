@@ -15,7 +15,10 @@ export const errorGraph = async ({
 
   if (!last && !endDate) endDate = new Date();
 
-  const datequery = last ? `now() - $6::interval AND now()` : `$6 AND $7`;
+  // Half-open range: start <= creation_date < end.
+  const datequery = last
+    ? `a.creation_date >= now() - $6::interval AND a.creation_date < now()`
+    : `a.creation_date >= $6::timestamptz AND a.creation_date < $7::timestamptz`;
   const facilityParam = last ? `$7::int[]` : `$8::int[]`;
   const queryParams = last
     ? [apiName, apiFunction, apiProvider, status, dataBin, last, facilityIds]
@@ -36,17 +39,16 @@ export const errorGraph = async ({
         date_bin($5, a.creation_date, '2000-01-01') date,
         COUNT(*) total,
         COUNT(CASE
-          WHEN a.status IN ('ERROR', 'FAILED') OR a.status IS NULL
+          WHEN a.status = $4::text 
           THEN 1
         END) error
       FROM
         api_transaction a
       WHERE
-        a.creation_date BETWEEN ${datequery}
+        ${datequery}
         AND ($1::text IS NULL OR a.api_name = $1)
         AND ($2::text IS NULL OR a.api_function = $2)
         AND ($3::text IS NULL OR a.api_provider = $3)
-        AND ($4::text IS NULL OR a.status = $4)
         AND a.facility_id = ANY(${facilityParam})
       GROUP BY
         date_bin($5, a.creation_date, '2000-01-01')
