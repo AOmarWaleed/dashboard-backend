@@ -13,15 +13,12 @@ export const errorGraph = async ({
 }) => {
   if (startDate || endDate) last = null;
 
-  if (!last && !endDate) endDate = new Date();
-
-  // Half-open range: start <= creation_date < end.
   const datequery = last
     ? `a.creation_date >= now() - $6::interval AND a.creation_date < now()`
-    : `a.creation_date >= $6::timestamptz AND a.creation_date < $7::timestamptz`;
+    : `($6::text IS NULL OR a.creation_date >= TO_TIMESTAMP($6, 'YYYY-MM-DD HH24:MI')) AND ($7::text IS NULL OR a.creation_date < COALESCE(TO_TIMESTAMP($7, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))`;
   const facilityParam = last ? `$7::int[]` : `$8::int[]`;
   const queryParams = last
-    ? [apiName, apiFunction, apiProvider, status, dataBin, last, facilityIds]
+    ? [apiName, apiFunction, apiProvider, status, dataBin, last, facilityIds && facilityIds.length > 0 ? facilityIds : [-1]]
     : [
         apiName,
         apiFunction,
@@ -30,7 +27,7 @@ export const errorGraph = async ({
         dataBin,
         startDate,
         endDate,
-        facilityIds,
+        facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
       ];
 
   const result = await query(
@@ -39,16 +36,17 @@ export const errorGraph = async ({
         date_bin($5, a.creation_date, '2000-01-01') date,
         COUNT(*) total,
         COUNT(CASE
-          WHEN a.status = $4::text 
+          WHEN UPPER(a.status) = UPPER($4::text)
           THEN 1
         END) error
       FROM
         api_transaction a
       WHERE
-        ${datequery}
-        AND ($1::text IS NULL OR a.api_name = $1)
-        AND ($2::text IS NULL OR a.api_function = $2)
-        AND ($3::text IS NULL OR a.api_provider = $3)
+        a.payer_id IS NOT NULL
+        AND ${datequery}
+        AND ($1::text IS NULL OR UPPER(a.api_name) = UPPER($1))
+        AND ($2::text IS NULL OR UPPER(a.api_function) = UPPER($2))
+        AND ($3::text IS NULL OR UPPER(a.api_provider) = UPPER($3))
         AND a.facility_id = ANY(${facilityParam})
       GROUP BY
         date_bin($5, a.creation_date, '2000-01-01')

@@ -5,10 +5,10 @@ const criteriaConditions = (prefix = "") =>
     `$1::timestamptz IS NULL OR ${prefix}creation_date >= TO_TIMESTAMP($1,'YYYY-MM-DD HH24:MI')`,
     `$2::timestamptz IS NULL OR ${prefix}creation_date <  COALESCE(TO_TIMESTAMP($2 , 'YYYY-MM-DD HH24:MI') , '9999-01-01 00:00'::timestamp)`,
     `$3::int IS NULL OR ${prefix}payer_id = $3::int`,
-    `$4::text IS NULL OR ${prefix}api_provider = $4::text`,
-    `$5::text IS NULL OR ${prefix}api_name = $5::text`,
-    `$6::text IS NULL OR ${prefix}api_function = $6::text`,
-    `$7::text IS NULL OR ${prefix}status = $7::text`,
+    `$4::text IS NULL OR UPPER(${prefix}api_provider) = UPPER($4::text)`,
+    `$5::text IS NULL OR UPPER(${prefix}api_name) = UPPER($5::text)`,
+    `$6::text IS NULL OR UPPER(${prefix}api_function) = UPPER($6::text)`,
+    `$7::text IS NULL OR UPPER(${prefix}status) = UPPER($7::text)`,
     `$8::int[] IS NULL OR ${prefix}facility_id = ANY($8::int[])`,
   ]
     .map((condition) => `(${condition})`)
@@ -53,6 +53,7 @@ const dimensionQuery = (column) => `
       ${column} AS label
     FROM api_transaction
     WHERE ${column} IS NOT NULL
+      AND payer_id IS NOT NULL
       AND ${criteriaConditions()}
     ORDER BY 1
   `;

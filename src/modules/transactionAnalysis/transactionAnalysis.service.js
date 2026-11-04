@@ -98,6 +98,7 @@ const pivotTimeBucketsByApi = (rows, displayField) => {
 
   return { data, total: data.length, apiNames };
 };
+
 export const getApiSummaryReport = async (filters = {}) => {
   const {
     startDate,
@@ -112,14 +113,14 @@ export const getApiSummaryReport = async (filters = {}) => {
 
   try {
     const params = {
-      p1: dayjs(startDate).toISOString(),
-      p2: dayjs(endDate).toISOString(),
+      p1: startDate || null,
+      p2: endDate || null,
       p3: payerId ? Number(payerId) : null,
-      p4: apiName,
-      p5: apiProvider,
-      p6: facilityIds,
-      p7: apiFunction,
-      p8: status,
+      p4: apiName || null,
+      p5: apiProvider || null,
+      p6: facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+      p7: apiFunction || null,
+      p8: status || null,
     };
 
     const baseQuery = `SELECT
@@ -133,10 +134,12 @@ export const getApiSummaryReport = async (filters = {}) => {
       COALESCE(SUM(a.preprocess_time_ms), 0)::float AS preprocess_sum,
       COUNT(a.preprocess_time_ms)::int AS preprocess_count
     FROM api_transaction a
-    WHERE a.creation_date BETWEEN :p1 AND :p2
+    WHERE a.payer_id IS NOT NULL
+      AND (:p1::text IS NULL OR a.creation_date >= TO_TIMESTAMP(:p1, 'YYYY-MM-DD HH24:MI'))
+      AND (:p2::text IS NULL OR a.creation_date < COALESCE(TO_TIMESTAMP(:p2, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
       AND (:p3::bigint IS NULL OR a.payer_id = :p3::bigint)
-      AND (:p4::text IS NULL OR a.api_name = :p4::text)
-      AND (:p5::text IS NULL OR a.api_provider = :p5::text)
+      AND (:p4::text IS NULL OR UPPER(a.api_name) = UPPER(:p4::text))
+      AND (:p5::text IS NULL OR UPPER(a.api_provider) = UPPER(:p5::text))
       AND a.facility_id IN (:p6)
       AND (:p7::text IS NULL OR UPPER(a.api_function) = UPPER(:p7::text))
       AND (:p8::text IS NULL OR UPPER(NULLIF(TRIM(a.status), '')) = UPPER(:p8::text))
@@ -166,6 +169,7 @@ export const getApiSummaryReport = async (filters = {}) => {
           counts: {},
         });
       }
+
       const group = grouped.get(row.api_name);
       group.total += row.total;
       group.response_sum += row.response_sum;
@@ -244,14 +248,14 @@ export const getHourlyApiPerformance = async (filters = {}) => {
   const { pageNum, limitNum } = getPagination(page, limit);
   try {
     const params = {
-      p1: dayjs(startDate).toISOString(),
-      p2: dayjs(endDate).toISOString(),
+      p1: startDate || null,
+      p2: endDate || null,
       p3: payerId ? Number(payerId) : null,
-      p4: apiName,
-      p5: apiProvider,
-      p6: facilityIds,
-      p7: apiFunction,
-      p8: status,
+      p4: apiName || null,
+      p5: apiProvider || null,
+      p6: facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+      p7: apiFunction || null,
+      p8: status || null,
     };
 
     const baseQuery = `SELECT
@@ -265,11 +269,13 @@ export const getHourlyApiPerformance = async (filters = {}) => {
       COUNT(a.local_api_time_ms)::int AS local_count,
       COUNT(CASE WHEN UPPER(a.status) IN ('SUCCEEDED', 'SUCCESS', 'PASS', 'PASSED') THEN 1 END)::int AS succeeded_count
     FROM api_transaction a
-    WHERE a.creation_date BETWEEN :p1 AND :p2
+    WHERE a.payer_id IS NOT NULL
+      AND (:p1::text IS NULL OR a.creation_date >= TO_TIMESTAMP(:p1, 'YYYY-MM-DD HH24:MI'))
+      AND (:p2::text IS NULL OR a.creation_date < COALESCE(TO_TIMESTAMP(:p2, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
       AND (:p3::bigint IS NULL OR a.payer_id = :p3::bigint)
-      AND (:p4::text IS NULL OR a.api_name = :p4::text)
+      AND (:p4::text IS NULL OR UPPER(a.api_name) = UPPER(:p4::text))
       AND a.api_name IS NOT NULL
-      AND (:p5::text IS NULL OR a.api_provider = :p5::text)
+      AND (:p5::text IS NULL OR UPPER(a.api_provider) = UPPER(:p5::text))
       AND a.facility_id IN (:p6)
       AND (:p7::text IS NULL OR UPPER(a.api_function) = UPPER(:p7::text))
       AND (:p8::text IS NULL OR UPPER(a.status) = UPPER(:p8::text))
@@ -308,14 +314,14 @@ export const getDailyApiPerformance = async (filters = {}) => {
   const { pageNum, limitNum } = getPagination(page, limit);
   try {
     const params = {
-      p1: dayjs(startDate).toISOString(),
-      p2: dayjs(endDate).toISOString(),
+      p1: startDate || null,
+      p2: endDate || null,
       p3: payerId ? Number(payerId) : null,
-      p4: apiName,
-      p5: apiProvider,
-      p6: facilityIds,
-      p7: apiFunction,
-      p8: status,
+      p4: apiName || null,
+      p5: apiProvider || null,
+      p6: facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+      p7: apiFunction || null,
+      p8: status || null,
     };
 
     const baseQuery = `SELECT
@@ -329,11 +335,13 @@ export const getDailyApiPerformance = async (filters = {}) => {
       COUNT(a.local_api_time_ms)::int AS local_count,
       COUNT(CASE WHEN UPPER(a.status) IN ('SUCCEEDED', 'SUCCESS', 'PASS', 'PASSED') THEN 1 END)::int AS succeeded_count
     FROM api_transaction a
-    WHERE a.creation_date BETWEEN :p1 AND :p2
+    WHERE a.payer_id IS NOT NULL
+      AND (:p1::text IS NULL OR a.creation_date >= TO_TIMESTAMP(:p1, 'YYYY-MM-DD HH24:MI'))
+      AND (:p2::text IS NULL OR a.creation_date < COALESCE(TO_TIMESTAMP(:p2, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
       AND (:p3::bigint IS NULL OR a.payer_id = :p3::bigint)
-      AND (:p4::text IS NULL OR a.api_name = :p4::text)
+      AND (:p4::text IS NULL OR UPPER(a.api_name) = UPPER(:p4::text))
       AND a.api_name IS NOT NULL
-      AND (:p5::text IS NULL OR a.api_provider = :p5::text)
+      AND (:p5::text IS NULL OR UPPER(a.api_provider) = UPPER(:p5::text))
       AND a.facility_id IN (:p6)
       AND (:p7::text IS NULL OR UPPER(a.api_function) = UPPER(:p7::text))
       AND (:p8::text IS NULL OR UPPER(a.status) = UPPER(:p8::text))
@@ -374,15 +382,15 @@ export const getTopFailedErrorsSummary = async (filters = {}) => {
 
   try {
     const params = {
-      p1: dayjs(startDate).toISOString(),
-      p2: dayjs(endDate).toISOString(),
-      p3: payerId,
-      p4: apiName,
-      p5: apiProvider,
-      p6: facilityIds,
-      p7: apiProvider,
-      p8: apiFunction,
-      p9: status,
+      p1: startDate || null,
+      p2: endDate || null,
+      p3: payerId ? Number(payerId) : null,
+      p4: apiName || null,
+      p5: apiProvider || null,
+      p6: facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+      p7: apiProvider || null,
+      p8: apiFunction || null,
+      p9: status || null,
       p10: dateFormat,
     };
 
@@ -396,18 +404,19 @@ export const getTopFailedErrorsSummary = async (filters = {}) => {
         TO_CHAR(MIN(a.creation_date), :p10) AS first_at
       FROM api_transaction a
       WHERE
-        a.status = 'FAILED'
+        a.payer_id IS NOT NULL
+        AND UPPER(a.status) = 'FAILED'
         AND a.error_message IS NOT NULL
         AND a.error_message <> ''
-        AND a.creation_date BETWEEN :p1 AND :p2
-        and (:p3::bigint IS NULL OR a.payer_id = :p3::bigint)
-        and (:p4::text IS NULL OR a.api_name = :p4::text)
-        and a.api_name is not null
-        and (:p5::text IS NULL OR a.api_provider = :p5::text)
+        AND (:p1::text IS NULL OR a.creation_date >= TO_TIMESTAMP(:p1, 'YYYY-MM-DD HH24:MI'))
+        AND (:p2::text IS NULL OR a.creation_date < COALESCE(TO_TIMESTAMP(:p2, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
+        AND (:p3::bigint IS NULL OR a.payer_id = :p3::bigint)
+        AND (:p4::text IS NULL OR UPPER(a.api_name) = UPPER(:p4::text))
+        AND a.api_name is not null
+        AND (:p5::text IS NULL OR UPPER(a.api_provider) = UPPER(:p5::text))
         AND a.facility_id IN (:p6)
-        AND (:p7::text IS NULL OR a.api_provider = :p7::text)
         AND (:p8::text IS NULL OR UPPER(a.api_function) = UPPER(:p8::text))
-        AND (:p9::text IS NULL OR a.status = :p9::text)
+        AND (:p9::text IS NULL OR UPPER(a.status) = UPPER(:p9::text))
       GROUP BY a.error_message
     `;
 
@@ -454,14 +463,14 @@ export const getTopFailedErrorsDetails = async (filters = {}) => {
 
   const params = {
     p1: errorMessage,
-    p2: dayjs(startDate).toISOString(),
-    p3: dayjs(endDate).toISOString(),
-    p4: payerId,
-    p5: apiName,
-    p6: apiProvider,
-    p7: facilityIds,
-    p8: apiFunction,
-    p9: status,
+    p2: startDate || null,
+    p3: endDate || null,
+    p4: payerId ? Number(payerId) : null,
+    p5: apiName || null,
+    p6: apiProvider || null,
+    p7: facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+    p8: apiFunction || null,
+    p9: status || null,
     p10: dateFormat,
   };
 
@@ -487,18 +496,20 @@ export const getTopFailedErrorsDetails = async (filters = {}) => {
       a.cancel_api_trans_id,
       a.error_message
     FROM api_transaction a
-    WHERE a.error_message = :p1::text
+    WHERE a.payer_id IS NOT NULL
+      AND a.error_message = :p1::text
       AND a.error_message IS NOT NULL
       AND a.error_message <> ''
-      AND a.status = 'FAILED'
-      AND a.creation_date BETWEEN :p2 AND :p3
+      AND UPPER(a.status) = 'FAILED'
+      AND (:p2::text IS NULL OR a.creation_date >= TO_TIMESTAMP(:p2, 'YYYY-MM-DD HH24:MI'))
+      AND (:p3::text IS NULL OR a.creation_date < COALESCE(TO_TIMESTAMP(:p3, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
       AND (:p4::bigint IS NULL OR a.payer_id = :p4::bigint)
-      AND (:p5::text IS NULL OR a.api_name = :p5::text)
+      AND (:p5::text IS NULL OR UPPER(a.api_name) = UPPER(:p5::text))
       AND a.api_name IS NOT NULL
-      AND (:p6::text IS NULL OR a.api_provider = :p6::text)
+      AND (:p6::text IS NULL OR UPPER(a.api_provider) = UPPER(:p6::text))
       AND a.facility_id IN (:p7)
       AND (:p8::text IS NULL OR UPPER(a.api_function) = UPPER(:p8::text))
-      AND (:p9::text IS NULL OR a.status = :p9::text)
+      AND (:p9::text IS NULL OR UPPER(a.status) = UPPER(:p9::text))
   `;
 
   try {
@@ -539,15 +550,15 @@ export const getErrorMessageSummary = async (filters = {}) => {
 
   try {
     const params = {
-      p1: dayjs(startDate).toISOString(),
-      p2: dayjs(endDate).toISOString(),
-      p3: payerId,
-      p4: apiName,
-      p5: apiProvider,
-      p6: facilityIds,
-      p7: apiProvider,
-      p8: apiFunction,
-      p9: status,
+      p1: startDate || null,
+      p2: endDate || null,
+      p3: payerId ? Number(payerId) : null,
+      p4: apiName || null,
+      p5: apiProvider || null,
+      p6: facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+      p7: apiProvider || null,
+      p8: apiFunction || null,
+      p9: status || null,
       p10: dateFormat,
       p11: nphiesCode,
     };
@@ -562,15 +573,16 @@ export const getErrorMessageSummary = async (filters = {}) => {
       from api_message m
       join api_transaction a on
       a.api_trans_id = m.api_trans_id
-      where a.creation_date between :p1 and :p2
+      where a.payer_id IS NOT NULL
+      and (:p1::text IS NULL OR a.creation_date >= TO_TIMESTAMP(:p1, 'YYYY-MM-DD HH24:MI'))
+      and (:p2::text IS NULL OR a.creation_date < COALESCE(TO_TIMESTAMP(:p2, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
       and (:p3::bigint IS NULL OR a.payer_id = :p3::bigint)
-      and (:p4::text IS NULL OR a.api_name = :p4::text)
-      and (:p5::text IS NULL OR a.api_provider = :p5::text)
+      and (:p4::text IS NULL OR UPPER(a.api_name) = UPPER(:p4::text))
+      and (:p5::text IS NULL OR UPPER(a.api_provider) = UPPER(:p5::text))
       and a.api_name is not null
       AND a.facility_id IN (:p6)
-      AND (:p7::text IS NULL OR a.api_provider = :p7::text)
       AND (:p8::text IS NULL OR UPPER(a.api_function) = UPPER(:p8::text))
-      AND (:p9::text IS NULL OR a.status = :p9::text)
+      AND (:p9::text IS NULL OR UPPER(a.status) = UPPER(:p9::text))
       AND (:p11::text IS NULL OR NULLIF(m.nphies_message_id, '') = :p11::text)
       group by NULLIF(m.nphies_message_id, ''), m.nphies_message
     `;
@@ -619,15 +631,15 @@ export const getErrorMessageDetails = async (filters = {}) => {
   const params = {
     p1: nphiesMessageId,
     p2: nphiesMessage,
-    p3: dayjs(startDate).toISOString(),
-    p4: dayjs(endDate).toISOString(),
+    p3: startDate || null,
+    p4: endDate || null,
     p5: dateFormat,
-    p6: payerId,
-    p7: apiName,
-    p8: apiProvider,
-    p9: facilityIds,
-    p10: apiFunction,
-    p11: status,
+    p6: payerId ? Number(payerId) : null,
+    p7: apiName || null,
+    p8: apiProvider || null,
+    p9: facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+    p10: apiFunction || null,
+    p11: status || null,
   };
 
   const baseQuery = `
@@ -652,21 +664,23 @@ export const getErrorMessageDetails = async (filters = {}) => {
       a.cancel_api_trans_id,
       a.error_message
     FROM api_transaction a
-    WHERE EXISTS (
+    WHERE a.payer_id IS NOT NULL
+      AND EXISTS (
       SELECT 1
       FROM api_message m
       WHERE m.api_trans_id = a.api_trans_id
         AND NULLIF(m.nphies_message_id, '') IS NOT DISTINCT FROM :p1::text
         AND m.nphies_message IS NOT DISTINCT FROM :p2::text
     )
-      AND a.creation_date BETWEEN :p3 AND :p4
+      AND (:p3::text IS NULL OR a.creation_date >= TO_TIMESTAMP(:p3, 'YYYY-MM-DD HH24:MI'))
+      AND (:p4::text IS NULL OR a.creation_date < COALESCE(TO_TIMESTAMP(:p4, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
       AND (:p6::bigint IS NULL OR a.payer_id = :p6::bigint)
-      AND (:p7::text IS NULL OR a.api_name = :p7::text)
+      AND (:p7::text IS NULL OR UPPER(a.api_name) = UPPER(:p7::text))
       AND a.api_name IS NOT NULL
-      AND (:p8::text IS NULL OR a.api_provider = :p8::text)
+      AND (:p8::text IS NULL OR UPPER(a.api_provider) = UPPER(:p8::text))
       AND a.facility_id IN (:p9)
       AND (:p10::text IS NULL OR UPPER(a.api_function) = UPPER(:p10::text))
-      AND (:p11::text IS NULL OR a.status = :p11::text)
+      AND (:p11::text IS NULL OR UPPER(a.status) = UPPER(:p11::text))
   `;
 
   const result = await new QueryView(baseQuery, params)
@@ -728,29 +742,31 @@ export const getErrorMessageMessages = async (filters = {}) => {
       SELECT ${messageSelect}
       FROM api_message m
       JOIN api_transaction a ON a.api_trans_id = m.api_trans_id
-      WHERE m.nphies_message_id = $1::text
+      WHERE a.payer_id IS NOT NULL
+        AND m.nphies_message_id = $1::text
         AND m.nphies_message_id IS NOT NULL
         AND m.nphies_message_id <> ''
-        AND a.creation_date BETWEEN $2 AND $3
+        AND ($2::text IS NULL OR a.creation_date >= TO_TIMESTAMP($2, 'YYYY-MM-DD HH24:MI'))
+        AND ($3::text IS NULL OR a.creation_date < COALESCE(TO_TIMESTAMP($3, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
         AND ($4::bigint IS NULL OR a.payer_id = $4::bigint)
-        AND ($5::text IS NULL OR a.api_name = $5::text)
+        AND ($5::text IS NULL OR UPPER(a.api_name) = UPPER($5::text))
         AND a.api_name IS NOT NULL
-        AND ($6::text IS NULL OR a.api_provider = $6::text)
+        AND ($6::text IS NULL OR UPPER(a.api_provider) = UPPER($6::text))
         AND ($7::int[] IS NULL OR a.facility_id = ANY($7::int[]))
         AND ($8::text IS NULL OR UPPER(a.api_function) = UPPER($8::text))
-        AND ($9::text IS NULL OR a.status = $9::text)
+        AND ($9::text IS NULL OR UPPER(a.status) = UPPER($9::text))
       ORDER BY m.message_id
     `;
     filterValues = [
       nphiesMessageId,
-      dayjs(startDate).toISOString(),
-      dayjs(endDate).toISOString(),
-      payerId,
-      apiName,
-      apiProvider,
-      facilityIds,
-      apiFunction,
-      status,
+      startDate || null,
+      endDate || null,
+      payerId ? Number(payerId) : null,
+      apiName || null,
+      apiProvider || null,
+      facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+      apiFunction || null,
+      status || null,
     ];
   }
 
@@ -784,14 +800,14 @@ export const getPayerPerformanceSummary = async (filters = {}) => {
   const { pageNum, limitNum } = getPagination(page, limit);
   try {
     const params = {
-      p1: dayjs(startDate).toISOString(),
-      p2: dayjs(endDate).toISOString(),
+      p1: startDate || null,
+      p2: endDate || null,
       p3: payerId ? Number(payerId) : null,
-      p4: apiName,
-      p5: apiProvider,
-      p6: facilityIds,
-      p7: apiFunction,
-      p8: status,
+      p4: apiName || null,
+      p5: apiProvider || null,
+      p6: facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+      p7: apiFunction || null,
+      p8: status || null,
     };
 
     const baseQuery = `
@@ -821,11 +837,11 @@ export const getPayerPerformanceSummary = async (filters = {}) => {
             a.payer_id,
             p.short_name AS description,
             COUNT(DISTINCT a.api_trans_id) AS trans,
-            COUNT(DISTINCT CASE WHEN a.status IN ('SUCCEEDED', 'SUCCESS') THEN a.api_trans_id END) AS succeded_count,
-            COUNT(DISTINCT CASE WHEN a.status = 'ERROR' THEN a.api_trans_id END) AS error_count,
-            COUNT(DISTINCT CASE WHEN a.status IN ('FAILED', 'FAIL') THEN a.api_trans_id END) AS failed_count,
+            COUNT(DISTINCT CASE WHEN UPPER(a.status) IN ('SUCCEEDED', 'SUCCESS') THEN a.api_trans_id END) AS succeded_count,
+            COUNT(DISTINCT CASE WHEN UPPER(a.status) = 'ERROR' THEN a.api_trans_id END) AS error_count,
+            COUNT(DISTINCT CASE WHEN UPPER(a.status) IN ('FAILED', 'FAIL') THEN a.api_trans_id END) AS failed_count,
             COUNT(DISTINCT CASE WHEN a.status IS NULL OR a.status IN ('-', '') THEN a.api_trans_id END) AS pending_count,
-            COUNT(DISTINCT CASE WHEN a.status IS NOT NULL AND a.status NOT IN ('ERROR', 'FAILED', 'FAIL', 'SUCCEEDED', 'SUCCESS', '-', '') THEN a.api_trans_id END) AS other_count,
+            COUNT(DISTINCT CASE WHEN a.status IS NOT NULL AND UPPER(a.status) NOT IN ('ERROR', 'FAILED', 'FAIL', 'SUCCEEDED', 'SUCCESS', '-', '') THEN a.api_trans_id END) AS other_count,
             COUNT(DISTINCT v.req_no) AS claims,
             COUNT(DISTINCT CASE WHEN a.outcome = 'APPROVED' THEN v.req_no END) AS approved,
             COUNT(DISTINCT CASE WHEN a.outcome = 'REJECTED' THEN v.req_no END) AS rejected,
@@ -833,16 +849,17 @@ export const getPayerPerformanceSummary = async (filters = {}) => {
             ROUND(AVG(a.local_api_time_ms) / 1000.0, 1) AS local_time_s
             FROM
             api_transaction a
-            JOIN service_request v ON a.api_trans_id = v.api_trans_id
-            JOIN payer p ON p.payer_id = a.payer_id
-            WHERE a.creation_date BETWEEN :p1 AND :p2
-              AND a.api_name IS NOT NULL
+            LEFT JOIN rcm.payer p ON p.payer_id = a.payer_id
+            LEFT JOIN service_request v ON a.api_trans_id = v.api_trans_id
+            WHERE a.payer_id IS NOT NULL
+              AND (:p1::text IS NULL OR a.creation_date >= TO_TIMESTAMP(:p1, 'YYYY-MM-DD HH24:MI'))
+              AND (:p2::text IS NULL OR a.creation_date < COALESCE(TO_TIMESTAMP(:p2, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
               AND (:p3::bigint IS NULL OR a.payer_id = :p3::bigint)
-              AND (:p4::text IS NULL OR a.api_name = :p4::text)
-              AND (:p5::text IS NULL OR a.api_provider = :p5::text)
+              AND (:p4::text IS NULL OR UPPER(a.api_name) = UPPER(:p4::text))
+              AND (:p5::text IS NULL OR UPPER(a.api_provider) = UPPER(:p5::text))
               AND a.facility_id IN (:p6)
               AND (:p7::text IS NULL OR UPPER(a.api_function) = UPPER(:p7::text))
-              AND (:p8::text IS NULL OR a.status = :p8::text)
+              AND (:p8::text IS NULL OR UPPER(a.status) = UPPER(:p8::text))
             GROUP BY
             a.payer_id, p.short_name
             ) AS subquery
@@ -877,9 +894,9 @@ export const getClaimRejectionSummary = async (filters = {}) => {
       p1: getDateFormat(),
       p2: patientId,
       p3: payerId,
-      p4: facilityIds,
-      p5: startDate ? dayjs(startDate).toISOString() : null,
-      p6: endDate ? dayjs(endDate).toISOString() : null,
+      p4: facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+      p5: startDate || null,
+      p6: endDate || null,
     };
 
     const baseQuery = `
@@ -903,8 +920,8 @@ export const getClaimRejectionSummary = async (filters = {}) => {
         AND (:p2::text IS NULL OR ah.patient_id = :p2::text)
         AND (:p3::text IS NULL OR ah.payer_id = :p3::text)
         AND ah.facility_id IN (:p4)
-        AND (:p5::timestamp IS NULL OR ah.response_date >= :p5::timestamp)
-        AND (:p6::timestamp IS NULL OR ah.response_date <= :p6::timestamp)
+        AND (:p5::text IS NULL OR ah.response_date >= TO_TIMESTAMP(:p5, 'YYYY-MM-DD HH24:MI'))
+        AND (:p6::text IS NULL OR ah.response_date < COALESCE(TO_TIMESTAMP(:p6, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
       GROUP BY
         ah.msg_id,
         nec.display
@@ -948,15 +965,15 @@ export const getClaimRejectionDetails = async (filters = {}) => {
       );
       startDate = dayjs(dateStrFirst)
         .startOf("day")
-        .format("YYYY-MM-DD HH:mm:ss");
-      endDate = dayjs(dateStrLast).endOf("day").format("YYYY-MM-DD HH:mm:ss");
+        .format("YYYY-MM-DD HH:mm");
+      endDate = dayjs(dateStrLast).endOf("day").format("YYYY-MM-DD HH:mm");
     }
 
     const params = {
       p1: getDateFormat(),
       p2: msgId,
       p3: payerId,
-      p4: facilityIds,
+      p4: facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
       p5: startDate,
       p6: endDate,
     };
@@ -1002,8 +1019,8 @@ export const getClaimRejectionDetails = async (filters = {}) => {
         AND (:p2::text IS NULL OR ah.msg_id = :p2::text)
         AND (:p3::text IS NULL OR ah.payer_id = :p3::text)
         AND ah.facility_id IN (:p4)
-        AND (:p5::timestamp IS NULL OR ah.response_date >= :p5::timestamp)
-        AND (:p6::timestamp IS NULL OR ah.response_date <= :p6::timestamp)
+        AND (:p5::text IS NULL OR ah.response_date >= TO_TIMESTAMP(:p5, 'YYYY-MM-DD HH24:MI'))
+        AND (:p6::text IS NULL OR ah.response_date < COALESCE(TO_TIMESTAMP(:p6, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
     `;
 
     const result = await new QueryView(baseQuery, params)
@@ -1035,17 +1052,17 @@ export const getErrorCodeSummary = async (filters = {}) => {
   const dateFormat = getTimestampFormat();
 
   const params = {
-      p1: dayjs(startDate).toISOString(),
-      p2: dayjs(endDate).toISOString(),
-      p3: payerId,
-      p4: apiName,
-      p5: apiProvider,
-      p6: facilityIds,
-      p7: apiFunction,
-      p8: status,
-      p9: dateFormat,
-    };
-    const baseQuery = `
+    p1: startDate || null,
+    p2: endDate || null,
+    p3: payerId ? Number(payerId) : null,
+    p4: apiName || null,
+    p5: apiProvider || null,
+    p6: facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+    p7: apiFunction || null,
+    p8: status || null,
+    p9: dateFormat,
+  };
+  const baseQuery = `
     SELECT COUNT(DISTINCT a.api_trans_id) AS total,
       NULLIF(m.nphies_message_id, '') AS nphies_message_id,
       MAX(m.nphies_message) AS message,
@@ -1053,13 +1070,15 @@ export const getErrorCodeSummary = async (filters = {}) => {
       TO_CHAR(MAX(a.creation_date), :p9) AS last_at
     FROM api_message m
     JOIN api_transaction a ON a.api_trans_id = m.api_trans_id
-    WHERE a.creation_date BETWEEN :p1 AND :p2
+    WHERE a.payer_id IS NOT NULL
+      AND (:p1::text IS NULL OR a.creation_date >= TO_TIMESTAMP(:p1, 'YYYY-MM-DD HH24:MI'))
+      AND (:p2::text IS NULL OR a.creation_date < COALESCE(TO_TIMESTAMP(:p2, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
       AND (:p3::bigint IS NULL OR a.payer_id = :p3::bigint)
-      AND (:p4::text IS NULL OR a.api_name = :p4::text)
-      AND (:p5::text IS NULL OR a.api_provider = :p5::text)
+      AND (:p4::text IS NULL OR UPPER(a.api_name) = UPPER(:p4::text))
+      AND (:p5::text IS NULL OR UPPER(a.api_provider) = UPPER(:p5::text))
       AND a.facility_id IN (:p6)
       AND (:p7::text IS NULL OR UPPER(a.api_function) = UPPER(:p7::text))
-      AND (:p8::text IS NULL OR a.status = :p8::text)
+      AND (:p8::text IS NULL OR UPPER(a.status) = UPPER(:p8::text))
       AND NULLIF(m.nphies_message_id, '') IS NOT NULL
     GROUP BY NULLIF(m.nphies_message_id, '')
   `;
@@ -1093,34 +1112,36 @@ export const getErrorDailyPerformance = async (filters = {}) => {
   } = filters;
 
   const params = [
-    dayjs(startDate).toISOString(),
-    dayjs(endDate).toISOString(),
-    payerId,
-    apiName,
-    apiProvider,
-    facilityIds,
-    apiFunction,
-    status,
-    nphiesCode,
+    startDate || null,
+    endDate || null,
+    payerId ? Number(payerId) : null,
+    apiName || null,
+    apiProvider || null,
+    facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+    apiFunction || null,
+    status || null,
+    nphiesCode || null,
   ];
   const res = await query(
     `SELECT TO_CHAR(date_trunc('day', a.creation_date), 'DD-MM-YYYY') AS day,
       EXTRACT(EPOCH FROM date_trunc('day', a.creation_date)) AS day_ts,
-      COUNT(*) FILTER (WHERE a.status = 'ERROR' OR a.status IS NULL) AS error_count,
-      COUNT(*) FILTER (WHERE a.status IN ('FAIL', 'FAILED')) AS fail_count,
-      COUNT(*) FILTER (WHERE a.status = 'SUCCESS') AS success_count,
+      COUNT(*) FILTER (WHERE UPPER(a.status) = 'ERROR' OR a.status IS NULL) AS error_count,
+      COUNT(*) FILTER (WHERE UPPER(a.status) IN ('FAIL', 'FAILED')) AS fail_count,
+      COUNT(*) FILTER (WHERE UPPER(a.status) = 'SUCCESS') AS success_count,
       COUNT(*) AS total,
-      ROUND(100.0 * COUNT(*) FILTER (WHERE a.status = 'ERROR' OR a.status IS NULL) / NULLIF(COUNT(*), 0), 2) AS error_percent,
-      ROUND(100.0 * COUNT(*) FILTER (WHERE a.status IN ('FAIL', 'FAILED')) / NULLIF(COUNT(*), 0), 2) AS fail_percent,
-      ROUND(100.0 * COUNT(*) FILTER (WHERE a.status = 'ERROR') / NULLIF(COUNT(*) FILTER (WHERE a.status IN ('ERROR', 'SUCCESS')), 0), 2) AS error_sent_percent
+      ROUND(100.0 * COUNT(*) FILTER (WHERE UPPER(a.status) = 'ERROR' OR a.status IS NULL) / NULLIF(COUNT(*), 0), 2) AS error_percent,
+      ROUND(100.0 * COUNT(*) FILTER (WHERE UPPER(a.status) IN ('FAIL', 'FAILED')) / NULLIF(COUNT(*), 0), 2) AS fail_percent,
+      ROUND(100.0 * COUNT(*) FILTER (WHERE UPPER(a.status) = 'ERROR') / NULLIF(COUNT(*) FILTER (WHERE UPPER(a.status) IN ('ERROR', 'SUCCESS')), 0), 2) AS error_sent_percent
     FROM api_transaction a
-    WHERE a.creation_date BETWEEN $1 AND $2
+    WHERE a.payer_id IS NOT NULL
+      AND ($1::text IS NULL OR a.creation_date >= TO_TIMESTAMP($1, 'YYYY-MM-DD HH24:MI'))
+      AND ($2::text IS NULL OR a.creation_date < COALESCE(TO_TIMESTAMP($2, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
       AND ($3::bigint IS NULL OR a.payer_id = $3::bigint)
-      AND ($4::text IS NULL OR a.api_name = $4::text)
-      AND ($5::text IS NULL OR a.api_provider = $5::text)
-      AND a.facility_id = ANY($6)
+      AND ($4::text IS NULL OR UPPER(a.api_name) = UPPER($4::text))
+      AND ($5::text IS NULL OR UPPER(a.api_provider) = UPPER($5::text))
+      AND a.facility_id = ANY($6::int[])
       AND ($7::text IS NULL OR UPPER(a.api_function) = UPPER($7::text))
-      AND ($8::text IS NULL OR a.status = $8::text)
+      AND ($8::text IS NULL OR UPPER(a.status) = UPPER($8::text))
       AND ($9::text IS NULL OR EXISTS (SELECT 1 FROM api_message m WHERE m.api_trans_id = a.api_trans_id AND NULLIF(m.nphies_message_id, '') = $9::text))
     GROUP BY 1, 2
     ORDER BY 2 ASC`,
@@ -1154,16 +1175,16 @@ export const getErrorHourlyPerformance = async (filters = {}) => {
         )
       : 1;
   const params = [
-    dayjs(startDate).toISOString(),
-    dayjs(endDate).toISOString(),
-    payerId,
-    apiName,
-    apiProvider,
-    facilityIds,
-    apiFunction,
-    status,
+    startDate || null,
+    endDate || null,
+    payerId ? Number(payerId) : null,
+    apiName || null,
+    apiProvider || null,
+    facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+    apiFunction || null,
+    status || null,
     dayCount,
-    nphiesCode,
+    nphiesCode || null,
     dayTs,
   ];
   const res = await query(
@@ -1172,19 +1193,21 @@ export const getErrorHourlyPerformance = async (filters = {}) => {
     ),
     agg AS (
       SELECT EXTRACT(HOUR FROM a.creation_date)::int AS hour,
-        COUNT(*) FILTER (WHERE a.status = 'ERROR' OR a.status IS NULL) AS error_count,
-        COUNT(*) FILTER (WHERE a.status = 'ERROR') AS strict_error_count,
-        COUNT(*) FILTER (WHERE a.status IN ('FAIL', 'FAILED')) AS fail_count,
-        COUNT(*) FILTER (WHERE a.status = 'SUCCESS') AS success_count,
+        COUNT(*) FILTER (WHERE UPPER(a.status) = 'ERROR' OR a.status IS NULL) AS error_count,
+        COUNT(*) FILTER (WHERE UPPER(a.status) = 'ERROR') AS strict_error_count,
+        COUNT(*) FILTER (WHERE UPPER(a.status) IN ('FAIL', 'FAILED')) AS fail_count,
+        COUNT(*) FILTER (WHERE UPPER(a.status) = 'SUCCESS') AS success_count,
         COUNT(*) AS total
       FROM api_transaction a
-      WHERE a.creation_date BETWEEN $1 AND $2
+      WHERE a.payer_id IS NOT NULL
+        AND ($1::text IS NULL OR a.creation_date >= TO_TIMESTAMP($1, 'YYYY-MM-DD HH24:MI'))
+        AND ($2::text IS NULL OR a.creation_date < COALESCE(TO_TIMESTAMP($2, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
         AND ($3::bigint IS NULL OR a.payer_id = $3::bigint)
-        AND ($4::text IS NULL OR a.api_name = $4::text)
-        AND ($5::text IS NULL OR a.api_provider = $5::text)
-        AND a.facility_id = ANY($6)
+        AND ($4::text IS NULL OR UPPER(a.api_name) = UPPER($4::text))
+        AND ($5::text IS NULL OR UPPER(a.api_provider) = UPPER($5::text))
+        AND a.facility_id = ANY($6::int[])
         AND ($7::text IS NULL OR UPPER(a.api_function) = UPPER($7::text))
-        AND ($8::text IS NULL OR a.status = $8::text)
+        AND ($8::text IS NULL OR UPPER(a.status) = UPPER($8::text))
         AND ($10::text IS NULL OR EXISTS (SELECT 1 FROM api_message m WHERE m.api_trans_id = a.api_trans_id AND NULLIF(m.nphies_message_id, '') = $10::text))
         AND ($11::numeric IS NULL OR EXTRACT(EPOCH FROM date_trunc('day', a.creation_date)) = $11::numeric)
       GROUP BY 1
@@ -1223,38 +1246,40 @@ export const getFacilitySummary = async (filters = {}) => {
   const { pageNum, limitNum } = getPagination(page, limit);
 
   const params = {
-    p1: dayjs(startDate).toISOString(),
-    p2: dayjs(endDate).toISOString(),
-    p3: facilityIds,
-    p4: payerId,
-    p5: apiName,
-    p6: apiProvider,
-    p7: apiFunction,
-    p8: status,
+    p1: startDate || null,
+    p2: endDate || null,
+    p3: facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+    p4: payerId ? Number(payerId) : null,
+    p5: apiName || null,
+    p6: apiProvider || null,
+    p7: apiFunction || null,
+    p8: status || null,
   };
   const baseQuery = `
     SELECT f.facility_id,
       MAX(f.name) AS facility_name,
       COUNT(*) AS total,
-      COUNT(*) FILTER (WHERE t.status = 'SUCCESS') AS succeeded_count,
-      COUNT(*) FILTER (WHERE t.status = 'ERROR') AS error_count,
-      COUNT(*) FILTER (WHERE t.status IN ('FAIL', 'FAILED')) AS failed_count,
-      ROUND(COUNT(*) FILTER (WHERE t.status = 'SUCCESS') * 100.0 / NULLIF(COUNT(*) FILTER (WHERE t.status IN ('SUCCESS', 'ERROR')), 0), 2) AS succeeded_percent,
-      ROUND(COUNT(*) FILTER (WHERE t.status = 'ERROR') * 100.0 / NULLIF(COUNT(*) FILTER (WHERE t.status IN ('SUCCESS', 'ERROR')), 0), 2) AS error_percent,
-      ROUND(COUNT(*) FILTER (WHERE t.status IN ('FAIL', 'FAILED')) * 100.0 / NULLIF(COUNT(*), 0), 2) AS failed_percent,
+      COUNT(*) FILTER (WHERE UPPER(t.status) = 'SUCCESS') AS succeeded_count,
+      COUNT(*) FILTER (WHERE UPPER(t.status) = 'ERROR') AS error_count,
+      COUNT(*) FILTER (WHERE UPPER(t.status) IN ('FAIL', 'FAILED')) AS failed_count,
+      ROUND(COUNT(*) FILTER (WHERE UPPER(t.status) = 'SUCCESS') * 100.0 / NULLIF(COUNT(*) FILTER (WHERE UPPER(t.status) IN ('SUCCESS', 'ERROR')), 0), 2) AS succeeded_percent,
+      ROUND(COUNT(*) FILTER (WHERE UPPER(t.status) = 'ERROR') * 100.0 / NULLIF(COUNT(*) FILTER (WHERE UPPER(t.status) IN ('SUCCESS', 'ERROR')), 0), 2) AS error_percent,
+      ROUND(COUNT(*) FILTER (WHERE UPPER(t.status) IN ('FAIL', 'FAILED')) * 100.0 / NULLIF(COUNT(*), 0), 2) AS failed_percent,
       ROUND(AVG(t.preprocess_time_ms) / 1000.0, 1) AS pre_sec,
       ROUND(AVG(t.local_api_time_ms) / 1000.0, 1) AS local_sec,
       ROUND(AVG(t.response_time_ms) / 1000.0, 1) AS res_sec,
       ROUND(AVG(t.elapsed_time_ms) / 1000.0, 1) AS tot_sec
     FROM api_transaction t
     JOIN rcm.facility f ON f.facility_id = t.facility_id
-    WHERE t.creation_date BETWEEN :p1 AND :p2
+    WHERE t.payer_id IS NOT NULL
+      AND (:p1::text IS NULL OR t.creation_date >= TO_TIMESTAMP(:p1, 'YYYY-MM-DD HH24:MI'))
+      AND (:p2::text IS NULL OR t.creation_date < COALESCE(TO_TIMESTAMP(:p2, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
       AND t.facility_id IN (:p3)
       AND (:p4::bigint IS NULL OR t.payer_id = :p4::bigint)
-      AND (:p5::text IS NULL OR t.api_name = :p5::text)
-      AND (:p6::text IS NULL OR t.api_provider = :p6::text)
+      AND (:p5::text IS NULL OR UPPER(t.api_name) = UPPER(:p5::text))
+      AND (:p6::text IS NULL OR UPPER(t.api_provider) = UPPER(:p6::text))
       AND (:p7::text IS NULL OR UPPER(t.api_function) = UPPER(:p7::text))
-      AND (:p8::text IS NULL OR t.status = :p8::text)
+      AND (:p8::text IS NULL OR UPPER(t.status) = UPPER(:p8::text))
     GROUP BY f.facility_id
   `;
 
@@ -1285,37 +1310,39 @@ export const getFacilityApiNameGrid = async (filters = {}) => {
   const { pageNum, limitNum } = getPagination(page, limit);
 
   const params = {
-    p1: dayjs(startDate).toISOString(),
-    p2: dayjs(endDate).toISOString(),
-    p3: facilityIds,
-    p4: facilityId,
-    p5: payerId,
-    p6: apiProvider,
-    p7: apiFunction,
-    p8: status,
+    p1: startDate || null,
+    p2: endDate || null,
+    p3: facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+    p4: facilityId ? Number(facilityId) : null,
+    p5: payerId ? Number(payerId) : null,
+    p6: apiProvider || null,
+    p7: apiFunction || null,
+    p8: status || null,
   };
   const baseQuery = `
     SELECT t.api_name,
-      COUNT(*) FILTER (WHERE t.status = 'SUCCESS') AS succeeded_count,
-      COUNT(*) FILTER (WHERE t.status = 'ERROR') AS error_count,
-      COUNT(*) FILTER (WHERE t.status IN ('FAIL', 'FAILED')) AS failed_count,
+      COUNT(*) FILTER (WHERE UPPER(t.status) = 'SUCCESS') AS succeeded_count,
+      COUNT(*) FILTER (WHERE UPPER(t.status) = 'ERROR') AS error_count,
+      COUNT(*) FILTER (WHERE UPPER(t.status) IN ('FAIL', 'FAILED')) AS failed_count,
       COUNT(*) AS total,
-      ROUND(COUNT(*) FILTER (WHERE t.status = 'SUCCESS') * 100.0 / NULLIF(COUNT(*) FILTER (WHERE t.status IN ('SUCCESS', 'ERROR')), 0), 2) AS succeeded_percent,
-      ROUND(COUNT(*) FILTER (WHERE t.status = 'ERROR') * 100.0 / NULLIF(COUNT(*) FILTER (WHERE t.status IN ('SUCCESS', 'ERROR')), 0), 2) AS error_percent,
-      ROUND(COUNT(*) FILTER (WHERE t.status IN ('FAIL', 'FAILED')) * 100.0 / NULLIF(COUNT(*), 0), 2) AS failed_percent,
+      ROUND(COUNT(*) FILTER (WHERE UPPER(t.status) = 'SUCCESS') * 100.0 / NULLIF(COUNT(*) FILTER (WHERE UPPER(t.status) IN ('SUCCESS', 'ERROR')), 0), 2) AS succeeded_percent,
+      ROUND(COUNT(*) FILTER (WHERE UPPER(t.status) = 'ERROR') * 100.0 / NULLIF(COUNT(*) FILTER (WHERE UPPER(t.status) IN ('SUCCESS', 'ERROR')), 0), 2) AS error_percent,
+      ROUND(COUNT(*) FILTER (WHERE UPPER(t.status) IN ('FAIL', 'FAILED')) * 100.0 / NULLIF(COUNT(*), 0), 2) AS failed_percent,
       ROUND(AVG(t.preprocess_time_ms) / 1000.0, 1) AS pre_sec,
       ROUND(AVG(t.local_api_time_ms) / 1000.0, 1) AS local_sec,
       ROUND(AVG(t.response_time_ms) / 1000.0, 1) AS res_sec,
       ROUND(AVG(t.elapsed_time_ms) / 1000.0, 1) AS tot_sec
     FROM api_transaction t
     JOIN rcm.facility f ON f.facility_id = t.facility_id
-    WHERE t.creation_date BETWEEN :p1 AND :p2
+    WHERE t.payer_id IS NOT NULL
+      AND (:p1::text IS NULL OR t.creation_date >= TO_TIMESTAMP(:p1, 'YYYY-MM-DD HH24:MI'))
+      AND (:p2::text IS NULL OR t.creation_date < COALESCE(TO_TIMESTAMP(:p2, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
       AND t.facility_id IN (:p3)
       AND (:p4::bigint IS NULL OR t.facility_id = :p4::bigint)
       AND (:p5::bigint IS NULL OR t.payer_id = :p5::bigint)
-      AND (:p6::text IS NULL OR t.api_provider = :p6::text)
+      AND (:p6::text IS NULL OR UPPER(t.api_provider) = UPPER(:p6::text))
       AND (:p7::text IS NULL OR UPPER(t.api_function) = UPPER(:p7::text))
-      AND (:p8::text IS NULL OR t.status = :p8::text)
+      AND (:p8::text IS NULL OR UPPER(t.status) = UPPER(:p8::text))
     GROUP BY t.api_name
   `;
 
@@ -1334,35 +1361,37 @@ export const getFacilityDailyPerformance = async (filters = {}) => {
   const { startDate, endDate, payerId, apiName, apiProvider, facilityIds = [-1], facilityId = null, apiFunction = null, status = null } = filters;
 
   const params = [
-    dayjs(startDate).toISOString(),
-    dayjs(endDate).toISOString(),
-    facilityIds,
-    facilityId,
-    payerId,
-    apiName,
-    apiProvider,
-    apiFunction,
-    status,
+    startDate || null,
+    endDate || null,
+    facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+    facilityId ? Number(facilityId) : null,
+    payerId ? Number(payerId) : null,
+    apiName || null,
+    apiProvider || null,
+    apiFunction || null,
+    status || null,
   ];
   const res = await query(
     `SELECT TO_CHAR(date_trunc('day', t.creation_date), 'DD-MM-YYYY') AS day,
       EXTRACT(EPOCH FROM date_trunc('day', t.creation_date)) AS day_ts,
-      COUNT(*) FILTER (WHERE t.status = 'ERROR' OR t.status IS NULL) AS error_count,
-      COUNT(*) FILTER (WHERE t.status IN ('FAIL', 'FAILED')) AS fail_count,
-      COUNT(*) FILTER (WHERE t.status = 'SUCCESS') AS success_count,
+      COUNT(*) FILTER (WHERE UPPER(t.status) = 'ERROR' OR t.status IS NULL) AS error_count,
+      COUNT(*) FILTER (WHERE UPPER(t.status) IN ('FAIL', 'FAILED')) AS fail_count,
+      COUNT(*) FILTER (WHERE UPPER(t.status) = 'SUCCESS') AS success_count,
       COUNT(*) AS total,
-      ROUND(100.0 * COUNT(*) FILTER (WHERE t.status = 'ERROR' OR t.status IS NULL) / NULLIF(COUNT(*), 0), 2) AS error_percent,
-      ROUND(100.0 * COUNT(*) FILTER (WHERE t.status IN ('FAIL', 'FAILED')) / NULLIF(COUNT(*), 0), 2) AS fail_percent,
-      ROUND(100.0 * COUNT(*) FILTER (WHERE t.status = 'ERROR') / NULLIF(COUNT(*) FILTER (WHERE t.status IN ('ERROR', 'SUCCESS')), 0), 2) AS error_sent_percent
+      ROUND(100.0 * COUNT(*) FILTER (WHERE UPPER(t.status) = 'ERROR' OR t.status IS NULL) / NULLIF(COUNT(*), 0), 2) AS error_percent,
+      ROUND(100.0 * COUNT(*) FILTER (WHERE UPPER(t.status) IN ('FAIL', 'FAILED')) / NULLIF(COUNT(*), 0), 2) AS fail_percent,
+      ROUND(100.0 * COUNT(*) FILTER (WHERE UPPER(t.status) = 'ERROR') / NULLIF(COUNT(*) FILTER (WHERE UPPER(t.status) IN ('ERROR', 'SUCCESS')), 0), 2) AS error_sent_percent
     FROM api_transaction t
-    WHERE t.creation_date BETWEEN $1 AND $2
-      AND t.facility_id = ANY($3)
+    WHERE t.payer_id IS NOT NULL
+      AND ($1::text IS NULL OR t.creation_date >= TO_TIMESTAMP($1, 'YYYY-MM-DD HH24:MI'))
+      AND ($2::text IS NULL OR t.creation_date < COALESCE(TO_TIMESTAMP($2, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
+      AND t.facility_id = ANY($3::int[])
       AND ($4::bigint IS NULL OR t.facility_id = $4::bigint)
       AND ($5::bigint IS NULL OR t.payer_id = $5::bigint)
-      AND ($6::text IS NULL OR t.api_name = $6::text)
-      AND ($7::text IS NULL OR t.api_provider = $7::text)
+      AND ($6::text IS NULL OR UPPER(t.api_name) = UPPER($6::text))
+      AND ($7::text IS NULL OR UPPER(t.api_provider) = UPPER($7::text))
       AND ($8::text IS NULL OR UPPER(t.api_function) = UPPER($8::text))
-      AND ($9::text IS NULL OR t.status = $9::text)
+      AND ($9::text IS NULL OR UPPER(t.status) = UPPER($9::text))
     GROUP BY 1, 2
     ORDER BY 2 ASC`,
     params,
@@ -1384,15 +1413,15 @@ export const getFacilityHourlyPerformance = async (filters = {}) => {
         )
       : 1;
   const params = [
-    dayjs(startDate).toISOString(),
-    dayjs(endDate).toISOString(),
-    facilityIds,
-    facilityId,
-    payerId,
-    apiName,
-    apiProvider,
-    apiFunction,
-    status,
+    startDate || null,
+    endDate || null,
+    facilityIds && facilityIds.length > 0 ? facilityIds : [-1],
+    facilityId ? Number(facilityId) : null,
+    payerId ? Number(payerId) : null,
+    apiName || null,
+    apiProvider || null,
+    apiFunction || null,
+    status || null,
     dayCount,
     dayTs,
   ];
@@ -1402,20 +1431,22 @@ export const getFacilityHourlyPerformance = async (filters = {}) => {
     ),
     agg AS (
       SELECT EXTRACT(HOUR FROM t.creation_date)::int AS hour,
-        COUNT(*) FILTER (WHERE t.status = 'ERROR' OR t.status IS NULL) AS error_count,
-        COUNT(*) FILTER (WHERE t.status = 'ERROR') AS strict_error_count,
-        COUNT(*) FILTER (WHERE t.status IN ('FAIL', 'FAILED')) AS fail_count,
-        COUNT(*) FILTER (WHERE t.status = 'SUCCESS') AS success_count,
+        COUNT(*) FILTER (WHERE UPPER(t.status) = 'ERROR' OR t.status IS NULL) AS error_count,
+        COUNT(*) FILTER (WHERE UPPER(t.status) = 'ERROR') AS strict_error_count,
+        COUNT(*) FILTER (WHERE UPPER(t.status) IN ('FAIL', 'FAILED')) AS fail_count,
+        COUNT(*) FILTER (WHERE UPPER(t.status) = 'SUCCESS') AS success_count,
         COUNT(*) AS total
       FROM api_transaction t
-      WHERE t.creation_date BETWEEN $1 AND $2
-        AND t.facility_id = ANY($3)
+      WHERE t.payer_id IS NOT NULL
+        AND ($1::text IS NULL OR t.creation_date >= TO_TIMESTAMP($1, 'YYYY-MM-DD HH24:MI'))
+        AND ($2::text IS NULL OR t.creation_date < COALESCE(TO_TIMESTAMP($2, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp))
+        AND t.facility_id = ANY($3::int[])
         AND ($4::bigint IS NULL OR t.facility_id = $4::bigint)
         AND ($5::bigint IS NULL OR t.payer_id = $5::bigint)
-        AND ($6::text IS NULL OR t.api_name = $6::text)
-        AND ($7::text IS NULL OR t.api_provider = $7::text)
+        AND ($6::text IS NULL OR UPPER(t.api_name) = UPPER($6::text))
+        AND ($7::text IS NULL OR UPPER(t.api_provider) = UPPER($7::text))
         AND ($8::text IS NULL OR UPPER(t.api_function) = UPPER($8::text))
-        AND ($9::text IS NULL OR t.status = $9::text)
+        AND ($9::text IS NULL OR UPPER(t.status) = UPPER($9::text))
         AND ($11::numeric IS NULL OR EXTRACT(EPOCH FROM date_trunc('day', t.creation_date)) = $11::numeric)
       GROUP BY 1
     )

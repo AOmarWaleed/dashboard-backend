@@ -3,33 +3,71 @@ import * as apiTransactionOptionsService from "../../services/apiTransactionOpti
 import { resolveFacilityIds } from "../../utils/resolveFacilityIds.js";
 import { handleController } from "../../utils/controller.js";
 import { DEFAULT_LIMIT, DEFAULT_PAGE } from "../../utils/pagination.js";
+import { convertDateTimeByTimezone } from "../../utils/datetime.js";
 
-const getFilters = async (req) => ({
-  startDate: req.query.start_date || req.query.date_start || null,
-  endDate: req.query.end_date || req.query.date_end || new Date(),
-  payerId: req.query.payer_id || null,
-  apiName: req.query.api_name || null,
-  apiProvider: req.query.api_provider || null,
-  apiFunction: req.query.api_function || null,
-  status: req.query.status || null,
-  facilityIds: await resolveFacilityIds(req),
-  patientId: req.query.patient_id || null,
-  msgId: req.query.msg_id || null,
-  first: req.query.first || null,
-  last: req.query.last || null,
-  page: req.query.page || DEFAULT_PAGE,
-  limit: req.query.limit || DEFAULT_LIMIT,
-  apiTransId: req.query.api_trans_id || null,
-  nphiesMessageId: req.query.nphies_message_id || null,
-  nphiesMessage: req.query.nphies_message || null,
-  nphiesCode: req.query.nphies_code || null,
-  dayTs: req.query.day_ts || null,
-  facilityId: req.query.facility_id || null,
-  errorMessage: req.query.error_message || null,
-  dataBin: req.query.data_bin || null,
-  _sort: req.query._sort || null,
-  _filter: req.query._filter || null,
-});
+const getFilters = async (req) => {
+  const userTimezone = req.headers.tz || "UTC";
+
+  let startDate = req.query.start_date || req.query.date_start || null;
+  if (startDate) {
+    startDate = convertDateTimeByTimezone(startDate, userTimezone);
+  } else {
+    const now = new Date();
+    startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  }
+
+  let endDate = req.query.end_date || req.query.date_end || null;
+  if (endDate) {
+    endDate = convertDateTimeByTimezone(endDate, userTimezone);
+  }
+
+  let apiTransId = req.query.api_trans_id || req.query.trans_id || null;
+  let bundleId = req.query.bundle_id || null;
+  let payerId = req.query.payer_id || null;
+  let apiName = req.query.api_name || null;
+  let apiFunction = req.query.api_function || null;
+  let status = req.query.transaction_status || req.query.status || null;
+  let apiProvider = req.query.api_provider || null;
+
+  if (apiTransId) bundleId = null;
+
+  if (apiTransId || bundleId) {
+    startDate = "0001-01-01 00:00";
+    endDate = "9999-01-01 00:00";
+    payerId = null;
+    apiName = null;
+    apiFunction = null;
+    status = null;
+  }
+
+  return {
+    startDate,
+    endDate,
+    payerId,
+    apiName,
+    apiProvider,
+    apiFunction,
+    status,
+    facilityIds: await resolveFacilityIds(req),
+    patientId: req.query.patient_id || null,
+    msgId: req.query.msg_id || null,
+    first: req.query.first || null,
+    last: req.query.last || null,
+    page: req.query.page || DEFAULT_PAGE,
+    limit: req.query.limit || DEFAULT_LIMIT,
+    apiTransId,
+    bundleId,
+    nphiesMessageId: req.query.nphies_message_id || null,
+    nphiesMessage: req.query.nphies_message || null,
+    nphiesCode: req.query.nphies_code || null,
+    dayTs: req.query.day_ts || null,
+    facilityId: req.query.facility_id || null,
+    errorMessage: req.query.error_message || null,
+    dataBin: req.query.data_bin || null,
+    _sort: req.query._sort || null,
+    _filter: req.query._filter || null,
+  };
+};
 
 export const getFilterOptions = handleController(
   async (req, res) => {
