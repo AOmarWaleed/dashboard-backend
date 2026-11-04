@@ -2,8 +2,8 @@ import { query } from "../config/database.js";
 
 const criteriaConditions = (prefix = "") =>
   [
-    `$1::timestamptz IS NULL OR ${prefix}creation_date >= TO_TIMESTAMP($1,'YYYY-MM-DD HH24:MI')`,
-    `$2::timestamptz IS NULL OR ${prefix}creation_date <  COALESCE(TO_TIMESTAMP($2 , 'YYYY-MM-DD HH24:MI') , '9999-01-01 00:00'::timestamp)`,
+    `$1::text IS NULL OR ${prefix}creation_date >= TO_TIMESTAMP($1, 'YYYY-MM-DD HH24:MI')`,
+    `$2::text IS NULL OR ${prefix}creation_date <  COALESCE(TO_TIMESTAMP($2, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp)`,
     `$3::int IS NULL OR ${prefix}payer_id = $3::int`,
     `$4::text IS NULL OR UPPER(${prefix}api_provider) = UPPER($4::text)`,
     `$5::text IS NULL OR UPPER(${prefix}api_name) = UPPER($5::text)`,
