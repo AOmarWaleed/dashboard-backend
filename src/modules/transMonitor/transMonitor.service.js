@@ -55,36 +55,40 @@ export const buildTransactionWhereClause = (filters = {}, startIndex = 1) => {
     conditions.push(`a.facility_id = ANY(${p}::int[])`);
   }
 
-  // 4. Payer filter
+  // 4. Payer filter (handles regular payer_id and non-payer transactions with -1 or NULL)
   if (
     filters.payer_id !== undefined &&
     filters.payer_id !== null &&
     filters.payer_id !== ""
   ) {
     const p = addParam(filters.payer_id);
-    conditions.push(`a.payer_id = ${p}`);
+    conditions.push(
+      `(a.payer_id = ${p}::int OR (${p}::int = -1 AND a.payer_id IS NULL))`,
+    );
   }
 
-  // 5. String filters (case-insensitive)
+  // 5. String filters (trimmed and case-insensitive, handling CHAR(n) padding and space/underscore variations)
   if (filters.api_name) {
     const p = addParam(filters.api_name);
-    conditions.push(`UPPER(a.api_name) = UPPER(${p})`);
+    conditions.push(`TRIM(UPPER(a.api_name)) = TRIM(UPPER(${p}))`);
   }
 
   if (filters.api_function) {
     const p = addParam(filters.api_function);
-    conditions.push(`UPPER(a.api_function) = UPPER(${p})`);
+    conditions.push(
+      `REPLACE(TRIM(UPPER(a.api_function)), ' ', '_') = REPLACE(TRIM(UPPER(${p})), ' ', '_')`,
+    );
   }
 
   if (filters.api_provider) {
     const p = addParam(filters.api_provider);
-    conditions.push(`UPPER(a.api_provider) = UPPER(${p})`);
+    conditions.push(`TRIM(UPPER(a.api_provider)) = TRIM(UPPER(${p}))`);
   }
 
   const statusVal = filters.status || filters.transaction_status;
   if (statusVal) {
     const p = addParam(statusVal);
-    conditions.push(`UPPER(a.status) = UPPER(${p})`);
+    conditions.push(`TRIM(UPPER(a.status)) = TRIM(UPPER(${p}))`);
   }
 
   if (filters.patient_id) {
@@ -326,7 +330,7 @@ export const getTransDetails = async ({
       COUNT(*) OVER() AS total_rows
     FROM api_transaction a
     ${whereClause}
-    ORDER BY a.creation_date DESC
+    ORDER BY date DESC
     LIMIT $1 OFFSET $2;`,
     [limitNum, offset, timestampFormat, ...values],
   );
