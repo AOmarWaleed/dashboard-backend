@@ -135,8 +135,13 @@ export const getTransSummary = async ({
     fieldsObj.facility_id = facilityIds;
 
   const whereResult = buildSummaryWhereClause(fieldsObj, 3);
-  //Average Preprocess Time
-  // Average Elapsed Time
+  console.log("=== getTransSummary SQL ===", whereResult.whereStatement);
+  console.log("=== getTransSummary PARAMS ===", JSON.stringify([
+    limit,
+    offset,
+    getConf("TIMESTAMP_FORMAT") || "DD-MM-YYYY",
+    ...whereResult.values,
+  ]));
 
   const result = await query(
     `SELECT 
@@ -224,6 +229,13 @@ export const getTransDetails = async ({
     fieldsObj.facility_id = facilityIds;
 
   const whereResult = buildDetailsWhereClause(fieldsObj, 3);
+  console.log("=== getTransDetails SQL ===", whereResult.whereStatement);
+  console.log("=== getTransDetails PARAMS ===", JSON.stringify([
+    limit,
+    offset,
+    getConf("TIMESTAMP_FORMAT") || "DD-MM-YYYY",
+    ...whereResult.values,
+  ]));
 
   const result = await query(
     `SELECT 
