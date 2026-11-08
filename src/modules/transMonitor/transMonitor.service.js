@@ -2,9 +2,108 @@ import { query } from "../../config/database.js";
 import { getConf } from "../../config/conf.js";
 import logger from "../../config/logger.js";
 
+/**
+ * Builds a robust WHERE clause and parameter list for api_transaction queries.
+ * @param {Object} filters
+ * @param {number} startIndex - 1-based parameter offset ($startIndex)
+ * @returns {{ whereClause: string, values: any[] }}
+ */
+export const buildTransactionWhereClause = (filters = {}, startIndex = 1) => {
+  const conditions = [];
+  const values = [];
+
+  const addParam = (val) => {
+    values.push(val);
+    return `$${startIndex + values.length - 1}`;
+  };
+
+  // 1. Direct ID overrides
+  if (filters.trans_id) {
+    const p = addParam(filters.trans_id);
+    conditions.push(`a.api_trans_id = ${p}`);
+    return {
+      whereClause: `WHERE ${conditions.join(" AND ")}`,
+      values,
+    };
+  }
+
+  if (filters.bundle_id) {
+    const p = addParam(filters.bundle_id);
+    conditions.push(`a.bundle_id = ${p}`);
+    return {
+      whereClause: `WHERE ${conditions.join(" AND ")}`,
+      values,
+    };
+  }
+
+  // 2. Date filters (Preserving exact date conversion logic)
+  if (filters.date_start) {
+    const p = addParam(filters.date_start);
+    conditions.push(`a.creation_date >= TO_TIMESTAMP(${p}, 'YYYY-MM-DD HH24:MI')`);
+  }
+
+  if (filters.date_end) {
+    const p = addParam(filters.date_end);
+    conditions.push(
+      `a.creation_date < COALESCE(TO_TIMESTAMP(${p}, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp)`,
+    );
+  }
+
+  // 3. Facility scoping
+  if (Array.isArray(filters.facilityIds) && filters.facilityIds.length > 0) {
+    const p = addParam(filters.facilityIds);
+    conditions.push(`a.facility_id = ANY(${p}::int[])`);
+  }
+
+  // 4. Payer filter
+  if (
+    filters.payer_id !== undefined &&
+    filters.payer_id !== null &&
+    filters.payer_id !== ""
+  ) {
+    const p = addParam(filters.payer_id);
+    conditions.push(`a.payer_id = ${p}`);
+  }
+
+  // 5. String filters (case-insensitive)
+  if (filters.api_name) {
+    const p = addParam(filters.api_name);
+    conditions.push(`UPPER(a.api_name) = UPPER(${p})`);
+  }
+
+  if (filters.api_function) {
+    const p = addParam(filters.api_function);
+    conditions.push(`UPPER(a.api_function) = UPPER(${p})`);
+  }
+
+  if (filters.api_provider) {
+    const p = addParam(filters.api_provider);
+    conditions.push(`UPPER(a.api_provider) = UPPER(${p})`);
+  }
+
+  const statusVal = filters.status || filters.transaction_status;
+  if (statusVal) {
+    const p = addParam(statusVal);
+    conditions.push(`UPPER(a.status) = UPPER(${p})`);
+  }
+
+  if (filters.patient_id) {
+    const p = addParam(filters.patient_id);
+    conditions.push(`a.patient_id = ${p}`);
+  }
+
+  const whereClause =
+    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  logger.debug(`buildTransactionWhereClause: ${whereClause}`);
+  return { whereClause, values };
+};
+
+/**
+ * Step 1: Payers Table - Aggregates transaction counts and average response times by payer.
+ */
 export const getPayers = async ({
-  page,
-  limit,
+  page = 1,
+  limit = 10,
   date_start,
   date_end,
   payer_id,
@@ -17,83 +116,65 @@ export const getPayers = async ({
   transaction_status,
   facilityIds,
 }) => {
-  page = parseInt(page, 10) || 1;
-  limit = parseInt(limit, 10) || 10;
-  const offset = (page - 1) * limit;
-  // Special condition handling
-  if (trans_id) bundle_id = null;
+  const pageNum = parseInt(page, 10) || 1;
+  const limitNum = parseInt(limit, 10) || 10;
+  const offset = (pageNum - 1) * limitNum;
 
-  if (trans_id || bundle_id) {
-    date_start = "0001-01-01 00:00";
-    date_end = "9999-01-01 00:00";
-    payer_id = null;
-    api_name = null;
-    api_function = null;
-    status = null;
-  }
-
-  const fieldsObj = {
-    date_start,
-    date_end,
-    payer_id,
-    api_name,
-    api_function,
-    status,
-    api_trans_id: trans_id,
-    bundle_id,
-    api_provider,
-    transaction_status,
-  };
-
-  // Now fetch paginated data
-  const { whereStatement: ws2, values: vals2 } = buildSummaryWhereClause(
-    fieldsObj,
-    2,
+  // Build where clause starting at parameter $3 ($1 is limit, $2 is offset)
+  const { whereClause: baseWhere, values } = buildTransactionWhereClause(
+    {
+      date_start,
+      date_end,
+      payer_id,
+      api_name,
+      api_function,
+      status,
+      trans_id,
+      bundle_id,
+      api_provider,
+      transaction_status,
+      facilityIds,
+    },
+    3,
   );
 
-  // Facility scoping (only when facility ids are resolved)
-  let facilityFilter = "";
-  const facilityValues = [];
-  if (facilityIds && facilityIds.length > 0) {
-    const facilityParamIndex = 3 + vals2.length;
-    facilityFilter = `${ws2 ? " AND" : " WHERE a.payer_id IS NOT NULL AND"} a.facility_id = ANY($${facilityParamIndex}::int[])`;
-    facilityValues.push(facilityIds);
-  }
+  const whereClause = baseWhere
+    ? `${baseWhere} AND a.payer_id IS NOT NULL`
+    : `WHERE a.payer_id IS NOT NULL`;
 
   const result = await query(
     `SELECT a.payer_id
           ,p.short_name AS payer_name
           ,COUNT(*) AS cnt
-          ,ROUND(AVG(response_time_ms)) AS response_ms
+          ,ROUND(AVG(a.response_time_ms)) AS response_ms
           ,COUNT(*) OVER() AS total_rows
      FROM api_transaction a
      LEFT OUTER JOIN rcm.payer p ON a.payer_id = p.payer_id
-     ${ws2}${facilityFilter}
+     ${whereClause}
      GROUP BY a.payer_id, p.short_name
+     ORDER BY cnt DESC, a.payer_id ASC
      LIMIT $1 OFFSET $2;`,
-    [limit, offset, ...vals2, ...facilityValues],
+    [limitNum, offset, ...values],
   );
 
   const totalRows = parseInt(result.rows[0]?.total_rows || "0", 10);
-  const totalPages = Math.ceil(totalRows / limit) || 1;
-
-  // If page is out of range
-  if (page > totalPages) {
-    throw new Error("Exceeded the number of existing pages");
-  }
+  const totalPages = Math.ceil(totalRows / limitNum) || 1;
 
   return {
-    page,
-    limit,
+    page: pageNum,
+    limit: limitNum,
     totalRows,
     totalPages,
     data: result.rows,
   };
 };
 
+/**
+ * Step 2: Summary Table - Aggregates transaction summaries by api_name, api_function, and status for a payer.
+ */
 export const getTransSummary = async ({
-  page,
-  limit,
+  page = 1,
+  limit = 10,
   date_start,
   date_end,
   payer_id,
@@ -107,186 +188,158 @@ export const getTransSummary = async ({
   transaction_status,
   facilityIds,
 }) => {
-  page = parseInt(page, 10) || 1;
-  limit = parseInt(limit, 10) || 10;
-  const offset = (page - 1) * limit;
+  const pageNum = parseInt(page, 10) || 1;
+  const limitNum = parseInt(limit, 10) || 10;
+  const offset = (pageNum - 1) * limitNum;
 
-  if (trans_id) bundle_id = null;
-
-  if (trans_id || bundle_id) {
-    date_start = "0001-01-01 00:00";
-    date_end = "9999-01-01 00:00";
-
-    api_name = null;
-    api_function = null;
-    status = null;
-  }
-
-  const fieldsObj = {
-    date_start,
-    date_end,
-    payer_id,
-    api_name,
-    api_function,
-    status,
-    api_trans_id: trans_id,
-    bundle_id,
-    api_provider,
-    patient_id,
-    transaction_status,
-  };
-
-  if (facilityIds && facilityIds.length > 0)
-    fieldsObj.facility_id = facilityIds;
-
-  const whereResult = buildSummaryWhereClause(fieldsObj, 3);
-  //Average Preprocess Time
-  // Average Elapsed Time
-
-  const result = await query(
-    `SELECT 
-  api_name, 
-  api_function,
-  status,
-  COUNT(*) AS trans_count,
-  TO_CHAR(MIN(a.creation_date), $3) AS earliest_trans,
-  EXTRACT(EPOCH FROM MIN(a.creation_date)) AS earliest_trans_ts,
-  TO_CHAR(MAX(a.creation_date), $3) AS latest_trans,
-  EXTRACT(EPOCH FROM MAX(a.creation_date)) AS latest_trans_ts,
-  ROUND(AVG(response_time_ms)) AS response_ms,
-  COUNT(*) OVER() AS total_rows,
-  AVG(preprocess_time_ms) as preprocess_t_ms,
-  AVG(elapsed_time_ms) as elapsed_t_ms
-FROM api_transaction a
-${whereResult.whereStatement}
-GROUP BY 
-  api_provider,
-  api_name,
-  api_function,
-  status
-      ORDER BY earliest_trans_ts DESC 
-LIMIT $1 OFFSET $2`,
-    [
-      limit,
-      offset,
-      getConf("TIMESTAMP_FORMAT") || "DD-MM-YYYY",
-      ...whereResult.values,
-    ],
-  );
-  const totalRows = parseInt(result.rows[0]?.total_rows || "0", 10);
-
-  const totalPages = Math.ceil(totalRows / limit);
-  const data = result.rows;
-
-  return { page, limit, totalRows, totalPages, data };
-};
-
-export const getTransDetails = async ({
-  page,
-  limit,
-  date_start,
-  date_end,
-  payer_id,
-  api_name,
-  api_function,
-  status,
-  trans_id,
-  bundle_id,
-  api_provider,
-  patient_id,
-  transaction_status,
-  facilityIds,
-}) => {
-  page = parseInt(page, 10) || 1;
-  limit = parseInt(limit, 10) || 10;
-  const offset = (page - 1) * limit;
-
-  if (trans_id) bundle_id = null;
-
-  if (trans_id || bundle_id) {
-    date_start = "0001-01-01 00:00";
-    date_end = "9999-01-01 00:00";
-    payer_id = null;
-    api_name = null;
-    api_function = null;
-    status = null;
-  }
-
-  const fieldsObj = {
-    date_start,
-    date_end,
-    payer_id,
-    api_name,
-    api_function,
-    status,
-    api_trans_id: trans_id,
-    bundle_id,
-    api_provider,
-    patient_id,
-    transaction_status,
-  };
-
-  if (facilityIds && facilityIds.length > 0)
-    fieldsObj.facility_id = facilityIds;
-
-  const whereResult = buildDetailsWhereClause(fieldsObj, 3);
-
-  const result = await query(
-    `SELECT 
-      api_trans_id,
-      api_name,
-      transaction_id,
-      api_function,
-      facility_id,
-      creation_date AS date,
-      TO_CHAR(creation_date, $3) AS creation_date,
-      EXTRACT(EPOCH FROM creation_date) AS creation_date_ts,
-      response_time_ms,
-      elapsed_time_ms,
-      preprocess_time_ms,
-      local_api_time_ms,
-      status,
-      outcome,
-      url,
-      adjudication_outcome,
-      patient_id,
+  // Build where clause starting at parameter $4 ($1=limit, $2=offset, $3=TIMESTAMP_FORMAT)
+  const { whereClause, values } = buildTransactionWhereClause(
+    {
+      date_start,
+      date_end,
       payer_id,
-      error_message,
-      cancel_api_trans_id,
-      transaction_id,
+      api_name,
+      api_function,
+      status,
+      trans_id,
       bundle_id,
-        episode_no,
-        TO_CHAR(trans_date, $3) AS trans_date,
-    
+      api_provider,
+      patient_id,
+      transaction_status,
+      facilityIds,
+    },
+    4,
+  );
 
-      dest_url,
-      LENGTH(request) / 1024 AS req_kb,
-      LENGTH(response) / 1024 AS res_kb,
-      bundle_count,
-      COUNT(*) OVER() AS total_rows
+  const timestampFormat = getConf("TIMESTAMP_FORMAT") || "DD-MM-YYYY";
+
+  const result = await query(
+    `SELECT 
+      a.api_name, 
+      a.api_function,
+      a.status,
+      COUNT(*) AS trans_count,
+      TO_CHAR(MIN(a.creation_date), $3) AS earliest_trans,
+      EXTRACT(EPOCH FROM MIN(a.creation_date)) AS earliest_trans_ts,
+      TO_CHAR(MAX(a.creation_date), $3) AS latest_trans,
+      EXTRACT(EPOCH FROM MAX(a.creation_date)) AS latest_trans_ts,
+      ROUND(AVG(a.response_time_ms)) AS response_ms,
+      COUNT(*) OVER() AS total_rows,
+      AVG(a.preprocess_time_ms) AS preprocess_t_ms,
+      AVG(a.elapsed_time_ms) AS elapsed_t_ms
     FROM api_transaction a
-    ${whereResult.whereStatement}
-    ORDER BY date DESC
-    LIMIT $1 OFFSET $2 ;`,
-    [
-      limit,
-      offset,
-      getConf("TIMESTAMP_FORMAT") || "DD-MM-YYYY",
-      ...whereResult.values,
-    ],
+    ${whereClause}
+    GROUP BY 
+      a.api_name,
+      a.api_function,
+      a.status
+    ORDER BY earliest_trans_ts DESC 
+    LIMIT $1 OFFSET $2;`,
+    [limitNum, offset, timestampFormat, ...values],
   );
 
   const totalRows = parseInt(result.rows[0]?.total_rows || "0", 10);
-  const totalPages = Math.ceil(totalRows / limit);
-
-  const data = result.rows;
+  const totalPages = Math.ceil(totalRows / limitNum) || 1;
 
   return {
-    page,
-    limit,
+    page: pageNum,
+    limit: limitNum,
     totalRows,
     totalPages,
-    data,
+    data: result.rows,
+  };
+};
+
+/**
+ * Step 3: Details Table - Detailed transaction records for a selected summary & payer.
+ */
+export const getTransDetails = async ({
+  page = 1,
+  limit = 10,
+  date_start,
+  date_end,
+  payer_id,
+  api_name,
+  api_function,
+  status,
+  trans_id,
+  bundle_id,
+  api_provider,
+  patient_id,
+  transaction_status,
+  facilityIds,
+}) => {
+  const pageNum = parseInt(page, 10) || 1;
+  const limitNum = parseInt(limit, 10) || 10;
+  const offset = (pageNum - 1) * limitNum;
+
+  // Build where clause starting at parameter $4 ($1=limit, $2=offset, $3=TIMESTAMP_FORMAT)
+  const { whereClause, values } = buildTransactionWhereClause(
+    {
+      date_start,
+      date_end,
+      payer_id,
+      api_name,
+      api_function,
+      status,
+      trans_id,
+      bundle_id,
+      api_provider,
+      patient_id,
+      transaction_status,
+      facilityIds,
+    },
+    4,
+  );
+
+  const timestampFormat = getConf("TIMESTAMP_FORMAT") || "DD-MM-YYYY";
+
+  const result = await query(
+    `SELECT 
+      a.api_trans_id,
+      a.api_name,
+      a.transaction_id,
+      a.api_function,
+      a.facility_id,
+      a.creation_date AS date,
+      TO_CHAR(a.creation_date, $3) AS creation_date,
+      EXTRACT(EPOCH FROM a.creation_date) AS creation_date_ts,
+      a.response_time_ms,
+      a.elapsed_time_ms,
+      a.preprocess_time_ms,
+      a.local_api_time_ms,
+      a.status,
+      a.outcome,
+      a.url,
+      a.adjudication_outcome,
+      a.patient_id,
+      a.payer_id,
+      a.error_message,
+      a.cancel_api_trans_id,
+      a.bundle_id,
+      a.episode_no,
+      TO_CHAR(a.trans_date, $3) AS trans_date,
+      a.dest_url,
+      LENGTH(a.request) / 1024 AS req_kb,
+      LENGTH(a.response) / 1024 AS res_kb,
+      a.bundle_count,
+      COUNT(*) OVER() AS total_rows
+    FROM api_transaction a
+    ${whereClause}
+    ORDER BY a.creation_date DESC
+    LIMIT $1 OFFSET $2;`,
+    [limitNum, offset, timestampFormat, ...values],
+  );
+
+  const totalRows = parseInt(result.rows[0]?.total_rows || "0", 10);
+  const totalPages = Math.ceil(totalRows / limitNum) || 1;
+
+  return {
+    page: pageNum,
+    limit: limitNum,
+    totalRows,
+    totalPages,
+    data: result.rows,
   };
 };
 
@@ -295,9 +348,9 @@ export const getTransErrors = async (
   page = 1,
   limit = 10,
 ) => {
-  page = parseInt(page, 10) || 1;
-  limit = parseInt(limit, 10) || 10;
-  const offset = (page - 1) * limit;
+  const pageNum = parseInt(page, 10) || 1;
+  const limitNum = parseInt(limit, 10) || 10;
+  const offset = (pageNum - 1) * limitNum;
 
   const result = await query(
     `SELECT 
@@ -313,10 +366,9 @@ export const getTransErrors = async (
      ${p_trans_id ? `WHERE api_trans_id = $1` : ``}
      ORDER BY message_id 
      LIMIT $${p_trans_id ? 2 : 1} OFFSET $${p_trans_id ? 3 : 2};`,
-    p_trans_id ? [p_trans_id, limit, offset] : [limit, offset],
+    p_trans_id ? [p_trans_id, limitNum, offset] : [limitNum, offset],
   );
 
-  // Get total count for pagination
   const countResult = await query(
     `SELECT COUNT(*) AS total
      FROM api_message
@@ -324,15 +376,15 @@ export const getTransErrors = async (
     p_trans_id ? [p_trans_id] : [],
   );
 
-  const totalRows = parseInt(countResult.rows[0].total, 10);
-  const totalPages = Math.ceil(totalRows / limit);
+  const totalRows = parseInt(countResult.rows[0]?.total || "0", 10);
+  const totalPages = Math.ceil(totalRows / limitNum) || 1;
 
   return {
     data: result.rows,
     totalRows,
     totalPages,
-    currentPage: page,
-    limit,
+    currentPage: pageNum,
+    limit: limitNum,
   };
 };
 
@@ -353,8 +405,8 @@ export const getTransResponses = async (p_trans_id = null) => {
        creation_date
     FROM nphies.poll_response_detail prd
     ${!values.length ? `` : `WHERE about_api_trans_id = $1`}
-    order by api_trans_id ,response_seq LIMIT 10
-    ;`,
+    ORDER BY api_trans_id, response_seq 
+    LIMIT 10;`,
     values,
   );
 
@@ -366,20 +418,18 @@ export const getPollDetails = async (
   page = 1,
   limit = 10,
 ) => {
-  page = parseInt(page, 10) || 1;
-  limit = parseInt(limit, 10) || 10;
-  const offset = (page - 1) * limit;
+  const pageNum = parseInt(page, 10) || 1;
+  const limitNum = parseInt(limit, 10) || 10;
+  const offset = (pageNum - 1) * limitNum;
 
   const values = [];
   let whereClause = "";
 
-  // Optional filtering by transaction ID
   if (p_about_trans_id) {
     whereClause = "WHERE prd.api_trans_id = $1";
     values.push(p_about_trans_id);
   }
 
-  // 1. Fetch paginated poll details
   const dataQuery = `
     SELECT
        response_seq,
@@ -397,129 +447,22 @@ export const getPollDetails = async (
     ORDER BY response_seq
     LIMIT $${values.length + 1} OFFSET $${values.length + 2};
   `;
-  const dataResult = await query(dataQuery, [...values, limit, offset]);
+  const dataResult = await query(dataQuery, [...values, limitNum, offset]);
 
-  // 2. Get total count
   const countQuery = `
     SELECT COUNT(*) AS count
     FROM nphies.poll_response_detail prd
     ${whereClause};
   `;
   const countResult = await query(countQuery, values);
-  const totalRows = parseInt(countResult.rows[0].count, 10);
-  const totalPages = Math.ceil(totalRows / limit);
+  const totalRows = parseInt(countResult.rows[0]?.count || "0", 10);
+  const totalPages = Math.ceil(totalRows / limitNum) || 1;
 
-  // 3. Return a consistent pagination structure
   return {
     data: dataResult.rows,
     totalRows,
     totalPages,
-    currentPage: page,
-    limit,
+    currentPage: pageNum,
+    limit: limitNum,
   };
-};
-
-const buildSummaryWhereClause = (fields, addToIndx = 0) => {
-  const keys = Object.keys(fields).filter(
-    (key) => fields[key] !== null && fields[key] !== undefined,
-  );
-
-  let whereStatement = "";
-  const values = [];
-
-  if (keys.length > 0) {
-    whereStatement += "WHERE ";
-    const conditions = [`a.payer_id IS NOT NULL`];
-
-    keys.forEach((key, idx) => {
-      const index = idx + addToIndx + 1;
-      values.push(fields[key]);
-
-      if (key === "date_start") {
-        conditions.push(
-          `a.creation_date >= TO_TIMESTAMP($${index}, 'YYYY-MM-DD HH24:MI')`,
-        );
-      } else if (key === "date_end") {
-        conditions.push(
-          `a.creation_date < COALESCE(TO_TIMESTAMP($${index}, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp)`,
-        );
-      } else if (key === "facility_id") {
-        conditions.push(`a.facility_id = ANY($${index}::int[])`);
-      } else if (key === "api_name") {
-        conditions.push(
-          `upper(a.${key}) = COALESCE(UPPER($${index}), a.${key})`,
-        );
-      } else if (key === "api_function") {
-        conditions.push(
-          `UPPER(a.${key}) = COALESCE(UPPER($${index}), a.${key})`,
-        );
-      } else if (key === "api_provider") {
-        conditions.push(`a.${key} = COALESCE(UPPER($${index}), a.${key})`);
-      } else if (key === "transaction_status") {
-        conditions.push(
-          `UPPER(a.status) = COALESCE(UPPER($${index}), a.status)`,
-        );
-      } else {
-        conditions.push(`a.${key} = COALESCE($${index}, a.${key})`);
-      }
-    });
-
-    whereStatement += conditions.join(" AND ");
-  }
-
-  logger.debug(`whereStatement:${whereStatement}`);
-  return { whereStatement, values };
-};
-
-const buildDetailsWhereClause = (fields, addToIndx = 0) => {
-  const keys = Object.keys(fields).filter(
-    (key) => fields[key] !== null && fields[key] !== undefined,
-  );
-
-  let whereStatement = "";
-  const values = [];
-
-  if (keys.length > 0) {
-    const conditions = [`a.api_trans_id IS NOT NULL`];
-
-    keys.forEach((key, idx) => {
-      const index = idx + addToIndx + 1;
-      values.push(fields[key]);
-
-      if (key === "date_start") {
-        conditions.push(
-          `a.creation_date >= TO_TIMESTAMP($${index}, 'YYYY-MM-DD HH24:MI')`,
-        );
-      } else if (key === "date_end") {
-        conditions.push(
-          `a.creation_date < COALESCE(TO_TIMESTAMP($${index}, 'YYYY-MM-DD HH24:MI'), '9999-01-01 00:00'::timestamp)`,
-        );
-      } else if (key === "facility_id") {
-        conditions.push(`a.facility_id = ANY($${index}::int[])`);
-      } else if (key === "status") {
-        conditions.push(`a.status = COALESCE($${index}, 'X')`);
-      } else if (key === "payer_id") {
-        conditions.push(`a.payer_id = $${index}`);
-      } else if (key === "api_name" || key === "api_function") {
-        conditions.push(
-          `UPPER(a.${key}) = COALESCE(UPPER($${index}), a.${key})`,
-        );
-      } else if (key === "api_provider") {
-        conditions.push(
-          `UPPER(a.${key}) = COALESCE(UPPER($${index}), a.${key})`,
-        );
-      } else if (key === "transaction_status") {
-        conditions.push(
-          `UPPER(a.status) = COALESCE(UPPER($${index}), a.status)`,
-        );
-      } else {
-        conditions.push(`a.${key} = COALESCE($${index}, a.${key})`);
-      }
-    });
-
-    whereStatement = "WHERE " + conditions.join(" AND ");
-  }
-
-  logger.debug(`whereStatement:${whereStatement}`);
-  return { whereStatement, values };
 };
