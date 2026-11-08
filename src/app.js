@@ -42,7 +42,7 @@ app.use(
 );
 
 // ---------- Rate limiting ----------
-app.use('/dashboard-api', apiLimiter);
+// app.use('/dashboard-api', apiLimiter);
 
 // ---------- Health check ----------
 app.get("/health", async (_req, res) => {
