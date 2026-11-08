@@ -12,6 +12,7 @@ export const sequelize = new Sequelize(
     host: config.DB.HOST,
     port: config.DB.PORT,
     dialect: "postgres",
+    timezone: "Asia/Riyadh",
     logging: false,
   }
 );

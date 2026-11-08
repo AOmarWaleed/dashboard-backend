@@ -20,7 +20,6 @@ export const getPayers = async ({
   page = parseInt(page, 10) || 1;
   limit = parseInt(limit, 10) || 10;
   const offset = (page - 1) * limit;
-
   // Special condition handling
   if (trans_id) bundle_id = null;
 

@@ -1319,6 +1319,10 @@ export const getFacilityApiNameGrid = async (filters = {}) => {
     p7: apiFunction || null,
     p8: status || null,
   };
+
+  console.log({startDate , endDate});
+
+  
   const baseQuery = `
     SELECT t.api_name,
       COUNT(*) FILTER (WHERE UPPER(t.status) = 'SUCCESS') AS succeeded_count,
@@ -1346,6 +1350,8 @@ export const getFacilityApiNameGrid = async (filters = {}) => {
     GROUP BY t.api_name
   `;
 
+
+  
   const result = await new QueryView(baseQuery, params)
     .apply({
       _sort: filters._sort || "total,desc",
@@ -1354,6 +1360,9 @@ export const getFacilityApiNameGrid = async (filters = {}) => {
       limit: filters.limit,
     })
     .execute();
+
+    
+
   return buildPaginatedResult(result, pageNum, limitNum);
 };
 

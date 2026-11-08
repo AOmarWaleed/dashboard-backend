@@ -18,7 +18,6 @@ const getFilters = async (req) => {
   if (endDate) {
     endDate = convertDateTimeByTimezone(endDate, userTimezone);
   }
-
   return {
     startDate,
     endDate,
@@ -29,15 +28,13 @@ const getFilters = async (req) => {
     status: req.query.transaction_status || req.query.status || null,
     dataBin: req.query.data_bin || "5 minute",
     facilityIds: await resolveFacilityIds(req),
+    statuses: req.query.statuses || [],
   };
 };
 
-export const errorGraph = handleController(
-  async (req, res) => {
-    const data = await transActionAnalysisService.errorGraph(
-      await getFilters(req),
-    );
-    return res.status(200).json(data);
-  },
-  "Failed to fetch error graph",
-);
+export const errorGraph = handleController(async (req, res) => {
+  const data = await transActionAnalysisService.errorGraph(
+    await getFilters(req),
+  );
+  return res.status(200).json(data);
+}, "Failed to fetch error graph");
