@@ -56,20 +56,20 @@ export const getPayers = async ({
   const facilityValues = [];
   if (facilityIds && facilityIds.length > 0) {
     const facilityParamIndex = 3 + vals2.length;
-    facilityFilter = `${ws2 ? " AND" : " WHERE a.payer_id IS NOT NULL AND"} a.facility_id = ANY($${facilityParamIndex}::int[])`;
+    facilityFilter = `${ws2 ? " AND" : " WHERE"} a.facility_id = ANY($${facilityParamIndex}::int[])`;
     facilityValues.push(facilityIds);
   }
 
   const result = await query(
-    `SELECT a.payer_id
-          ,p.short_name AS payer_name
+    `SELECT COALESCE(a.payer_id, -1) AS payer_id
+          ,COALESCE(p.short_name, 'Non-Payer') AS payer_name
           ,COUNT(*) AS cnt
           ,ROUND(AVG(response_time_ms)) AS response_ms
           ,COUNT(*) OVER() AS total_rows
      FROM api_transaction a
      LEFT OUTER JOIN rcm.payer p ON a.payer_id = p.payer_id
      ${ws2}${facilityFilter}
-     GROUP BY a.payer_id, p.short_name
+     GROUP BY COALESCE(a.payer_id, -1), COALESCE(p.short_name, 'Non-Payer')
      LIMIT $1 OFFSET $2;`,
     [limit, offset, ...vals2, ...facilityValues],
   );
