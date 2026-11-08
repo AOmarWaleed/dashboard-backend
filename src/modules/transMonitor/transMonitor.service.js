@@ -77,11 +77,6 @@ export const getPayers = async ({
   const totalRows = parseInt(result.rows[0]?.total_rows || "0", 10);
   const totalPages = Math.ceil(totalRows / limit) || 1;
 
-  // If page is out of range
-  if (page > totalPages) {
-    throw new Error("Exceeded the number of existing pages");
-  }
-
   return {
     page,
     limit,
@@ -160,7 +155,6 @@ export const getTransSummary = async ({
 FROM api_transaction a
 ${whereResult.whereStatement}
 GROUP BY 
-  api_provider,
   api_name,
   api_function,
   status
@@ -421,7 +415,12 @@ export const getPollDetails = async (
 
 const buildSummaryWhereClause = (fields, addToIndx = 0) => {
   const keys = Object.keys(fields).filter(
-    (key) => fields[key] !== null && fields[key] !== undefined,
+    (key) =>
+      fields[key] !== null &&
+      fields[key] !== undefined &&
+      fields[key] !== "" &&
+      fields[key] !== "null" &&
+      fields[key] !== "undefined",
   );
 
   let whereStatement = "";
@@ -429,7 +428,7 @@ const buildSummaryWhereClause = (fields, addToIndx = 0) => {
 
   if (keys.length > 0) {
     whereStatement += "WHERE ";
-    const conditions = [`a.payer_id IS NOT NULL`];
+    const conditions = [`a.api_trans_id IS NOT NULL`];
 
     keys.forEach((key, idx) => {
       const index = idx + addToIndx + 1;
@@ -445,22 +444,28 @@ const buildSummaryWhereClause = (fields, addToIndx = 0) => {
         );
       } else if (key === "facility_id") {
         conditions.push(`a.facility_id = ANY($${index}::int[])`);
+      } else if (key === "payer_id") {
+        conditions.push(
+          `(a.payer_id = $${index}::int OR ($${index}::int = -1 AND a.payer_id IS NULL))`,
+        );
       } else if (key === "api_name") {
         conditions.push(
-          `upper(a.${key}) = COALESCE(UPPER($${index}), a.${key})`,
+          `TRIM(UPPER(a.${key})) = TRIM(UPPER($${index}))`,
         );
       } else if (key === "api_function") {
         conditions.push(
-          `UPPER(a.${key}) = COALESCE(UPPER($${index}), a.${key})`,
+          `REPLACE(TRIM(UPPER(a.${key})), ' ', '_') = REPLACE(TRIM(UPPER($${index})), ' ', '_')`,
         );
       } else if (key === "api_provider") {
-        conditions.push(`a.${key} = COALESCE(UPPER($${index}), a.${key})`);
-      } else if (key === "transaction_status") {
         conditions.push(
-          `UPPER(a.status) = COALESCE(UPPER($${index}), a.status)`,
+          `TRIM(UPPER(a.${key})) = TRIM(UPPER($${index}))`,
+        );
+      } else if (key === "transaction_status" || key === "status") {
+        conditions.push(
+          `TRIM(UPPER(a.status)) = TRIM(UPPER($${index}))`,
         );
       } else {
-        conditions.push(`a.${key} = COALESCE($${index}, a.${key})`);
+        conditions.push(`a.${key} = $${index}`);
       }
     });
 
@@ -473,7 +478,12 @@ const buildSummaryWhereClause = (fields, addToIndx = 0) => {
 
 const buildDetailsWhereClause = (fields, addToIndx = 0) => {
   const keys = Object.keys(fields).filter(
-    (key) => fields[key] !== null && fields[key] !== undefined,
+    (key) =>
+      fields[key] !== null &&
+      fields[key] !== undefined &&
+      fields[key] !== "" &&
+      fields[key] !== "null" &&
+      fields[key] !== "undefined",
   );
 
   let whereStatement = "";
@@ -496,24 +506,28 @@ const buildDetailsWhereClause = (fields, addToIndx = 0) => {
         );
       } else if (key === "facility_id") {
         conditions.push(`a.facility_id = ANY($${index}::int[])`);
-      } else if (key === "status") {
-        conditions.push(`a.status = COALESCE($${index}, 'X')`);
-      } else if (key === "payer_id") {
-        conditions.push(`a.payer_id = $${index}`);
-      } else if (key === "api_name" || key === "api_function") {
+      } else if (key === "status" || key === "transaction_status") {
         conditions.push(
-          `UPPER(a.${key}) = COALESCE(UPPER($${index}), a.${key})`,
+          `TRIM(UPPER(a.status)) = TRIM(UPPER($${index}))`,
+        );
+      } else if (key === "payer_id") {
+        conditions.push(
+          `(a.payer_id = $${index}::int OR ($${index}::int = -1 AND a.payer_id IS NULL))`,
+        );
+      } else if (key === "api_name") {
+        conditions.push(
+          `TRIM(UPPER(a.${key})) = TRIM(UPPER($${index}))`,
+        );
+      } else if (key === "api_function") {
+        conditions.push(
+          `REPLACE(TRIM(UPPER(a.${key})), ' ', '_') = REPLACE(TRIM(UPPER($${index})), ' ', '_')`,
         );
       } else if (key === "api_provider") {
         conditions.push(
-          `UPPER(a.${key}) = COALESCE(UPPER($${index}), a.${key})`,
-        );
-      } else if (key === "transaction_status") {
-        conditions.push(
-          `UPPER(a.status) = COALESCE(UPPER($${index}), a.status)`,
+          `TRIM(UPPER(a.${key})) = TRIM(UPPER($${index}))`,
         );
       } else {
-        conditions.push(`a.${key} = COALESCE($${index}, a.${key})`);
+        conditions.push(`a.${key} = $${index}`);
       }
     });
 
