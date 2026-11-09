@@ -56,26 +56,31 @@ export const getPayers = async ({
   const facilityValues = [];
   if (facilityIds && facilityIds.length > 0) {
     const facilityParamIndex = 3 + vals2.length;
-    facilityFilter = `${ws2 ? " AND" : " WHERE"} a.facility_id = ANY($${facilityParamIndex}::int[])`;
+    facilityFilter = `${ws2 ? " AND" : " WHERE a.payer_id IS NOT NULL AND"} a.facility_id = ANY($${facilityParamIndex}::int[])`;
     facilityValues.push(facilityIds);
   }
 
   const result = await query(
-    `SELECT COALESCE(a.payer_id, -1) AS payer_id
-          ,COALESCE(p.short_name, 'Non-Payer') AS payer_name
+    `SELECT a.payer_id
+          ,p.short_name AS payer_name
           ,COUNT(*) AS cnt
           ,ROUND(AVG(response_time_ms)) AS response_ms
           ,COUNT(*) OVER() AS total_rows
      FROM api_transaction a
      LEFT OUTER JOIN rcm.payer p ON a.payer_id = p.payer_id
      ${ws2}${facilityFilter}
-     GROUP BY COALESCE(a.payer_id, -1), COALESCE(p.short_name, 'Non-Payer')
+     GROUP BY a.payer_id, p.short_name
      LIMIT $1 OFFSET $2;`,
     [limit, offset, ...vals2, ...facilityValues],
   );
 
   const totalRows = parseInt(result.rows[0]?.total_rows || "0", 10);
   const totalPages = Math.ceil(totalRows / limit) || 1;
+
+  // If page is out of range
+  if (page > totalPages) {
+    throw new Error("Exceeded the number of existing pages");
+  }
 
   return {
     page,
@@ -135,13 +140,8 @@ export const getTransSummary = async ({
     fieldsObj.facility_id = facilityIds;
 
   const whereResult = buildSummaryWhereClause(fieldsObj, 3);
-  console.log("=== getTransSummary SQL ===", whereResult.whereStatement);
-  console.log("=== getTransSummary PARAMS ===", JSON.stringify([
-    limit,
-    offset,
-    getConf("TIMESTAMP_FORMAT") || "DD-MM-YYYY",
-    ...whereResult.values,
-  ]));
+  //Average Preprocess Time
+  // Average Elapsed Time
 
   const result = await query(
     `SELECT 
@@ -160,6 +160,7 @@ export const getTransSummary = async ({
 FROM api_transaction a
 ${whereResult.whereStatement}
 GROUP BY 
+  api_provider,
   api_name,
   api_function,
   status
@@ -229,13 +230,6 @@ export const getTransDetails = async ({
     fieldsObj.facility_id = facilityIds;
 
   const whereResult = buildDetailsWhereClause(fieldsObj, 3);
-  console.log("=== getTransDetails SQL ===", whereResult.whereStatement);
-  console.log("=== getTransDetails PARAMS ===", JSON.stringify([
-    limit,
-    offset,
-    getConf("TIMESTAMP_FORMAT") || "DD-MM-YYYY",
-    ...whereResult.values,
-  ]));
 
   const result = await query(
     `SELECT 
@@ -427,12 +421,7 @@ export const getPollDetails = async (
 
 const buildSummaryWhereClause = (fields, addToIndx = 0) => {
   const keys = Object.keys(fields).filter(
-    (key) =>
-      fields[key] !== null &&
-      fields[key] !== undefined &&
-      fields[key] !== "" &&
-      fields[key] !== "null" &&
-      fields[key] !== "undefined",
+    (key) => fields[key] !== null && fields[key] !== undefined,
   );
 
   let whereStatement = "";
@@ -440,7 +429,7 @@ const buildSummaryWhereClause = (fields, addToIndx = 0) => {
 
   if (keys.length > 0) {
     whereStatement += "WHERE ";
-    const conditions = [`a.api_trans_id IS NOT NULL`];
+    const conditions = [`a.payer_id IS NOT NULL`];
 
     keys.forEach((key, idx) => {
       const index = idx + addToIndx + 1;
@@ -456,28 +445,22 @@ const buildSummaryWhereClause = (fields, addToIndx = 0) => {
         );
       } else if (key === "facility_id") {
         conditions.push(`a.facility_id = ANY($${index}::int[])`);
-      } else if (key === "payer_id") {
-        conditions.push(
-          `(a.payer_id = $${index}::int OR ($${index}::int = -1 AND a.payer_id IS NULL))`,
-        );
       } else if (key === "api_name") {
         conditions.push(
-          `TRIM(UPPER(a.${key})) = TRIM(UPPER($${index}))`,
+          `upper(a.${key}) = COALESCE(UPPER($${index}), a.${key})`,
         );
       } else if (key === "api_function") {
         conditions.push(
-          `REPLACE(TRIM(UPPER(a.${key})), ' ', '_') = REPLACE(TRIM(UPPER($${index})), ' ', '_')`,
+          `UPPER(a.${key}) = COALESCE(UPPER($${index}), a.${key})`,
         );
       } else if (key === "api_provider") {
+        conditions.push(`a.${key} = COALESCE(UPPER($${index}), a.${key})`);
+      } else if (key === "transaction_status") {
         conditions.push(
-          `TRIM(UPPER(a.${key})) = TRIM(UPPER($${index}))`,
-        );
-      } else if (key === "transaction_status" || key === "status") {
-        conditions.push(
-          `TRIM(UPPER(a.status)) = TRIM(UPPER($${index}))`,
+          `UPPER(a.status) = COALESCE(UPPER($${index}), a.status)`,
         );
       } else {
-        conditions.push(`a.${key} = $${index}`);
+        conditions.push(`a.${key} = COALESCE($${index}, a.${key})`);
       }
     });
 
@@ -490,12 +473,7 @@ const buildSummaryWhereClause = (fields, addToIndx = 0) => {
 
 const buildDetailsWhereClause = (fields, addToIndx = 0) => {
   const keys = Object.keys(fields).filter(
-    (key) =>
-      fields[key] !== null &&
-      fields[key] !== undefined &&
-      fields[key] !== "" &&
-      fields[key] !== "null" &&
-      fields[key] !== "undefined",
+    (key) => fields[key] !== null && fields[key] !== undefined,
   );
 
   let whereStatement = "";
@@ -518,28 +496,24 @@ const buildDetailsWhereClause = (fields, addToIndx = 0) => {
         );
       } else if (key === "facility_id") {
         conditions.push(`a.facility_id = ANY($${index}::int[])`);
-      } else if (key === "status" || key === "transaction_status") {
-        conditions.push(
-          `TRIM(UPPER(a.status)) = TRIM(UPPER($${index}))`,
-        );
+      } else if (key === "status") {
+        conditions.push(`a.status = COALESCE($${index}, 'X')`);
       } else if (key === "payer_id") {
+        conditions.push(`a.payer_id = $${index}`);
+      } else if (key === "api_name" || key === "api_function") {
         conditions.push(
-          `(a.payer_id = $${index}::int OR ($${index}::int = -1 AND a.payer_id IS NULL))`,
-        );
-      } else if (key === "api_name") {
-        conditions.push(
-          `TRIM(UPPER(a.${key})) = TRIM(UPPER($${index}))`,
-        );
-      } else if (key === "api_function") {
-        conditions.push(
-          `REPLACE(TRIM(UPPER(a.${key})), ' ', '_') = REPLACE(TRIM(UPPER($${index})), ' ', '_')`,
+          `UPPER(a.${key}) = COALESCE(UPPER($${index}), a.${key})`,
         );
       } else if (key === "api_provider") {
         conditions.push(
-          `TRIM(UPPER(a.${key})) = TRIM(UPPER($${index}))`,
+          `UPPER(a.${key}) = COALESCE(UPPER($${index}), a.${key})`,
+        );
+      } else if (key === "transaction_status") {
+        conditions.push(
+          `UPPER(a.status) = COALESCE(UPPER($${index}), a.status)`,
         );
       } else {
-        conditions.push(`a.${key} = $${index}`);
+        conditions.push(`a.${key} = COALESCE($${index}, a.${key})`);
       }
     });
 
